@@ -1,0 +1,13 @@
+2025-07-01 16:44:43,839 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8000
+ * Running on http://192.168.1.20:8000
+2025-07-01 16:44:43,839 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-07-01 16:44:43,840 - werkzeug - INFO -  * Restarting with stat
+2025-07-01 16:44:43,917 - werkzeug - WARNING -  * Debugger is active!
+2025-07-01 16:44:43,921 - werkzeug - INFO -  * Debugger PIN: 834-784-065
+2025-07-01 16:44:47,309 - FileServer - ERROR - 主页面加载失败: Object of type set is not JSON serializable
+2025-07-01 16:44:47,323 - werkzeug - INFO - 127.0.0.1 - - [01/Jul/2025 16:44:47] "[35m[1mGET / HTTP/1.1[0m" 500 -
+2025-07-01 16:44:47,332 - werkzeug - INFO - 127.0.0.1 - - [01/Jul/2025 16:44:47] "[36mGET /?__debugger__=yes&cmd=resource&f=style.css HTTP/1.1[0m" 304 -
+2025-07-01 16:44:47,333 - werkzeug - INFO - 127.0.0.1 - - [01/Jul/2025 16:44:47] "[36mGET /?__debugger__=yes&cmd=resource&f=debugger.js HTTP/1.1[0m" 304 -
+2025-07-01 16:44:47,337 - werkzeug - INFO - 127.0.0.1 - - [01/Jul/2025 16:44:47] "GET /?__debugger__=yes&cmd=resource&f=console.png&s=hzsUtrjNLV5LJQtcS267 HTTP/1.1" 200 -

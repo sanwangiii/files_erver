@@ -1,0 +1,40 @@
+文件预览服务器正在运行...
+请访问: http://localhost:8000
+局域网访问: http://192.168.1.18:8000
+文件目录: /Volumes/My Passport
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8000
+ * Running on http://192.168.1.18:8000
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [13/Dec/2025 01:55:10] "POST /api/upload HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:55:30] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:55:30] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:55:31] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:55:31] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:55:37] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:56:52] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:57:04] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:57:47] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:57:47] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:57:49] "GET /api/files?dir=电视剧&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:57:51] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:57:52] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:57:57] "POST /api/upload HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 01:58:00] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:00:04] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:00:04] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:00:36] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:00:42] "POST /api/upload HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:00:42] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:00:50] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:00:51] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:01:06] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:01:06] "GET /api/files?dir=&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:01:12] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:01:16] "POST /api/upload HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:01:16] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:04:08] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -
+127.0.0.1 - - [13/Dec/2025 02:04:28] "GET /api/files?dir=宝宝&sort_by=name&sort_order=asc HTTP/1.1" 200 -

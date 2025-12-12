@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>修复管理员用户配置</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        pre {
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>修复管理员用户配置</h1>
+        <p>点击下面的按钮修复管理员用户的配置问题：</p>
+        <button onclick="fixAdminUser()">修复管理员用户</button>
+        <pre id="result"></pre>
+    </div>
+
+    <script>
+        function log(message) {
+            document.getElementById('result').textContent += message + '\n';
+            console.log(message);
+        }
+
+        function fixAdminUser() {
+            log('开始修复管理员用户的localStorage数据...');
+            
+            // 获取当前的用户数据
+            let users = [];
+            const savedUsers = localStorage.getItem('users');
+            if (savedUsers) {
+                users = JSON.parse(savedUsers);
+                log('已找到用户数据，共 ' + users.length + ' 个用户');
+            } else {
+                log('未找到用户数据，将使用默认配置');
+            }
+            
+            // 更新管理员用户配置
+            const adminUser = users.find(u => u.username === 'admin');
+            if (adminUser) {
+                adminUser.isAdmin = true;
+                adminUser.permissions = ['*'];
+                adminUser.token = 'admin-token';
+                log('管理员用户配置已更新:');
+                log('  用户名: ' + adminUser.username);
+                log('  isAdmin: ' + adminUser.isAdmin);
+                log('  权限: ' + JSON.stringify(adminUser.permissions));
+                log('  Token: ' + adminUser.token);
+            } else {
+                // 如果没有找到管理员用户，添加一个新的
+                const newAdmin = {
+                    id: 1,
+                    username: 'admin',
+                    password: 'e10adc3949ba59abbe56e057f20f883e', // md5('admin123')
+                    isAdmin: true,
+                    permissions: ['*'],
+                    token: 'admin-token'
+                };
+                users.push(newAdmin);
+                log('已添加新的管理员用户:');
+                log('  用户名: ' + newAdmin.username);
+                log('  isAdmin: ' + newAdmin.isAdmin);
+                log('  权限: ' + JSON.stringify(newAdmin.permissions));
+            }
+            
+            // 保存更新后的用户数据
+            localStorage.setItem('users', JSON.stringify(users));
+            log('用户数据已保存到localStorage');
+            
+            // 清除当前登录的用户数据，强制重新登录
+            localStorage.removeItem('user');
+            log('已清除当前登录的用户数据');
+            log('修复完成！请重新登录系统。');
+            
+            // 5秒后跳转到登录页面
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>预览: {{ video_title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: #333;
+            line-height: 1.6;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            overflow: hidden;
+            margin-top: 20px;
+            margin-bottom: 20px;
+            animation: slideUp 0.4s ease;
+        }
+
+        .video-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 24px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .back-btn a {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            background-color: rgba(255,255,255,0.2);
+            color: white;
+            border-radius: 10px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            font-weight: 500;
+        }
+
+        .back-btn a:hover {
+            background-color: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+        }
+
+        .video-title {
+            flex-grow: 1;
+            text-align: center;
+            padding: 0 30px;
+        }
+
+        .video-title h1 {
+            font-size: 24px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            letter-spacing: -0.5px;
+        }
+
+        .video-player-container {
+            position: relative;
+            width: 100%;
+            background-color: #000;
+            aspect-ratio: 16/9;
+            box-shadow: inset 0 5px 20px rgba(0,0,0,0.5);
+        }
+
+        .video-player-container video {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+        }
+
+        .video-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            padding: 20px 30px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-top: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .control-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 22px;
+            background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            border-radius: 30px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .control-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .control-btn:hover::before {
+            left: 100%;
+        }
+
+        .control-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+        }
+
+        .control-btn:active {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .vlc-container {
+            padding: 30px;
+            background: linear-gradient(135deg, #f0f7ff 0%, #e0f2fe 100%);
+            border-top: 2px solid rgba(102, 126, 234, 0.2);
+        }
+
+        .vlc-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 15px;
+        }
+
+        .vlc-header i {
+            font-size: 40px;
+            color: #ff8800;
+            filter: drop-shadow(0 4px 10px rgba(255, 136, 0, 0.3));
+        }
+
+        .vlc-header h2 {
+            font-size: 24px;
+            color: #1a56db;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .vlc-info {
+            margin-bottom: 25px;
+            line-height: 1.8;
+            font-size: 16px;
+        }
+
+        .vlc-launch-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 18px 35px;
+            background: linear-gradient(135deg, #ff8800 0%, #ff5500 100%);
+            color: white;
+            border-radius: 12px;
+            font-size: 20px;
+            font-weight: 700;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            margin: 15px 0;
+            box-shadow: 0 8px 25px rgba(255, 136, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .vlc-launch-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            transition: left 0.5s;
+        }
+
+        .vlc-launch-btn:hover::before {
+            left: 100%;
+        }
+
+        .vlc-launch-btn:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 35px rgba(255, 136, 0, 0.4);
+        }
+
+        .vlc-launch-btn:active {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 136, 0, 0.3);
+        }
+
+        .instructions {
+            margin-top: 25px;
+            background-color: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .step {
+            display: flex;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px dashed #e2e8f0;
+            align-items: flex-start;
+        }
+
+        .step:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .step-number {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 16px;
+            margin-right: 20px;
+            flex-shrink: 0;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .step-content {
+            flex-grow: 1;
+        }
+
+        .step-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #2d3748;
+            font-size: 18px;
+        }
+
+        .step-content p {
+            margin-bottom: 10px;
+            color: #4a5568;
+        }
+
+        .warning {
+            background: linear-gradient(135deg, #fff8f1 0%, #fef3c7 100%);
+            border-left: 5px solid #ff9f43;
+            padding: 16px 20px;
+            margin-top: 20px;
+            border-radius: 0 10px 10px 0;
+            box-shadow: 0 4px 15px rgba(255, 159, 67, 0.15);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .warning i {
+            color: #ff9f43;
+            font-size: 24px;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        .vlc-tip {
+            color: #ff8800;
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 0;
+                border-radius: 0;
+            }
+
+            .video-header {
+                flex-direction: column;
+                gap: 20px;
+                text-align: center;
+                padding: 20px;
+            }
+
+            .video-title {
+                padding: 0;
+            }
+
+            .video-title h1 {
+                font-size: 20px;
+            }
+
+            .video-controls {
+                justify-content: center;
+                padding: 15px;
+                gap: 8px;
+            }
+
+            .control-btn {
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+
+            .vlc-container {
+                padding: 20px;
+            }
+
+            .vlc-header i {
+                font-size: 32px;
+            }
+
+            .vlc-header h2 {
+                font-size: 20px;
+            }
+
+            .vlc-launch-btn {
+                padding: 15px 25px;
+                font-size: 16px;
+            }
+
+            .instructions {
+                padding: 20px;
+            }
+
+            .step {
+                margin-bottom: 15px;
+                padding-bottom: 15px;
+            }
+
+            .step-number {
+                width: 30px;
+                height: 30px;
+                font-size: 14px;
+                margin-right: 15px;
+            }
+
+            .step-title {
+                font-size: 16px;
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="video-header">
+            <div class="back-btn">
+                <a href="{{ url_for('index', dir=parent_dir) }}{{ '?' if not parent_dir else '&' }}token={{ token }}">
+                    <i class="fas fa-arrow-left"></i> 返回列表
+                </a>
+            </div>
+            <div class="video-title">
+                <h1>{{ video_title }}</h1>
+            </div>
+        </div>
+
+        <div class="video-player-container">
+            <video id="videoPlayer" controls autoplay playsinline>
+                <source src="{{ video_url }}?token={{ token }}" type="video/mp4">
+                您的浏览器不支持视频播放。
+            </video>
+        </div>
+
+        <div class="video-controls">
+            <button id="playPauseBtn" class="control-btn">
+                <i class="fas fa-play"></i> 播放/暂停
+            </button>
+            <button id="fullscreenBtn" class="control-btn">
+                <i class="fas fa-expand"></i> 全屏
+            </button>
+            <button id="volumeToggle" class="control-btn">
+                <i class="fas fa-volume-up"></i> 静音
+            </button>
+        </div>
+
+        <div class="vlc-container">
+            <div class="vlc-header">
+                <i class="fab fa-vlc"></i>
+                <h2>使用VLC播放器</h2>
+            </div>
+
+            <div class="vlc-info">
+                <p>点击下方按钮直接在VLC中播放此视频：</p>
+
+                <a href="{{ vlc_protocol_url }}" id="vlcLaunchBtn" class="vlc-launch-btn">
+                    <i class="fab fa-vlc"></i> 在VLC中打开
+                </a>
+
+                <p>如果按钮无效，请尝试以下方法：</p>
+            </div>
+
+            <div class="instructions">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-title">复制视频链接</div>
+                        <p>点击下方按钮复制视频链接：</p>
+                        <button id="copyUrlBtn" class="control-btn">
+                            <i class="fas fa-copy"></i> 复制视频链接
+                        </button>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <div class="step-title">打开VLC播放器</div>
+                        <p>运行VLC播放器，点击菜单：<strong>媒体</strong> → <strong>打开网络串流</strong></p>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <div class="step-title">粘贴视频链接</div>
+                        <p>在"网络URL"框中粘贴复制的链接</p>
+                        <div class="warning">
+                            <p class="vlc-tip">重要提示：</p>
+                            <p>如果遇到播放问题，请确保您的设备连接到和本服务器相同的网络</p>
+                            <p>有时防火墙可能会阻止访问，请确保8000端口已开放</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 标记文件为已查阅
+            const filePath = "{{ video_path }}";
+            if (typeof(Storage) !== "undefined") {
+                let viewedFiles = JSON.parse(localStorage.getItem('viewedFiles')) || [];
+                if (!viewedFiles.includes(filePath)) {
+                    viewedFiles.push(filePath);
+                    localStorage.setItem('viewedFiles', JSON.stringify(viewedFiles));
+                }
+            }
+            const video = document.getElementById('videoPlayer');
+            const playPauseBtn = document.getElementById('playPauseBtn');
+            const fullscreenBtn = document.getElementById('fullscreenBtn');
+            const volumeToggle = document.getElementById('volumeToggle');
+            const vlcLaunchBtn = document.getElementById('vlcLaunchBtn');
+            const copyUrlBtn = document.getElementById('copyUrlBtn');
+
+            // 播放/暂停按钮
+            playPauseBtn.addEventListener('click', function() {
+                if (video.paused) {
+                    video.play();
+                    playPauseBtn.innerHTML = '<i class="fas fa-pause"></i> 暂停';
+                } else {
+                    video.pause();
+                    playPauseBtn.innerHTML = '<i class="fas fa-play"></i> 播放';
+                }
+            });
+
+            // 全屏按钮
+            fullscreenBtn.addEventListener('click', function() {
+                if (video.requestFullscreen) {
+                    video.requestFullscreen();
+                } else if (video.mozRequestFullScreen) {
+                    video.mozRequestFullScreen();
+                } else if (video.webkitRequestFullscreen) {
+                    video.webkitRequestFullscreen();
+                } else if (video.msRequestFullscreen) {
+                    video.msRequestFullscreen();
+                }
+            });
+
+            // 静音按钮
+            volumeToggle.addEventListener('click', function() {
+                video.muted = !video.muted;
+                if (video.muted) {
+                    volumeToggle.innerHTML = '<i class="fas fa-volume-mute"></i> 取消静音';
+                } else {
+                    volumeToggle.innerHTML = '<i class="fas fa-volume-up"></i> 静音';
+                }
+            });
+
+            // 复制链接按钮
+            copyUrlBtn.addEventListener('click', function() {
+                const tempInput = document.createElement('input');
+                tempInput.value = "{{ video_url }}?token={{ token }}";
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempInput);
+
+                // 显示复制成功反馈
+                const originalText = copyUrlBtn.innerHTML;
+                copyUrlBtn.innerHTML = '<i class="fas fa-check"></i> 已复制';
+                copyUrlBtn.style.backgroundColor = '#4ade80';
+
+                setTimeout(() => {
+                    copyUrlBtn.innerHTML = originalText;
+                    copyUrlBtn.style.backgroundColor = '';
+                }, 2000);
+            });
+
+            // VLC启动按钮
+            vlcLaunchBtn.addEventListener('click', function(e) {
+                // 尝试直接打开VLC
+                try {
+                    window.location.href = "{{ vlc_protocol_url }}";
+
+                    // 设置超时检查
+                    setTimeout(function() {
+                        if (!document.hidden) {
+                            alert('如果VLC没有自动打开，请手动打开VLC并粘贴链接');
+                        }
+                    }, 2000);
+                } catch (error) {
+                    console.error('无法打开VLC:', error);
+                    alert('无法直接打开VLC，请手动复制链接并在VLC中打开');
+                }
+            });
+
+            // 视频播放事件
+            video.addEventListener('play', function() {
+                playPauseBtn.innerHTML = '<i class="fas fa-pause"></i> 暂停';
+            });
+
+            video.addEventListener('pause', function() {
+                playPauseBtn.innerHTML = '<i class="fas fa-play"></i> 播放';
+            });
+
+            // 错误处理
+            video.addEventListener('error', function() {
+                console.error('视频播放错误:', video.error);
+
+                // 显示错误信息
+                const errorMsg = `播放错误: ${video.error ? video.error.message : '未知错误'}`;
+                const errorElement = document.createElement('div');
+                errorElement.className = 'warning';
+                errorElement.innerHTML = `
+                    <i class="fas fa-exclamation-triangle" style="color: #e53e3e;"></i>
+                    <strong>${errorMsg}</strong> - 请尝试使用VLC播放器
+                `;
+                document.querySelector('.vlc-container').prepend(errorElement);
+            });
+        });
+    </script>
+</body>
+</html>

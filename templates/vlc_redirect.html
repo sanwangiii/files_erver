@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>使用VLC播放视频</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f7f9fc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .container {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .vlc-logo {
+            font-size: 64px;
+            color: #ff8800;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+
+        p {
+            color: #666;
+            font-size: 18px;
+            line-height: 1.6;
+            margin-bottom: 25px;
+        }
+
+        .btn-open {
+            display: inline-flex;
+            align-items: center;
+            padding: 15px 25px;
+            background-color: #ff8800;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            transition: all 0.3s;
+            margin: 10px;
+        }
+
+        .btn-open:hover {
+            background-color: #ff6a00;
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(255, 136, 0, 0.3);
+        }
+
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            padding: 15px 25px;
+            background-color: #00aaee;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            transition: all 0.3s;
+            margin: 10px;
+        }
+
+        .btn-download:hover {
+            background-color: #0099cc;
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0, 170, 238, 0.3);
+        }
+
+        .step {
+            background-color: #f0f7ff;
+            border-left: 4px solid #00aaee;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+            text-align: left;
+        }
+
+        .step-number {
+            display: inline-block;
+            width: 28px;
+            height: 28px;
+            background-color: #00aaee;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 28px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        .auto-open {
+            margin-top: 30px;
+            font-size: 14px;
+            color: #888;
+        }
+    </style>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const vlcUrl = "{{ vlc_url }}";
+
+            // 尝试自动打开VLC
+            setTimeout(() => {
+                try {
+                    window.location.href = vlcUrl;
+                } catch (e) {
+                    console.error('无法自动打开VLC:', e);
+                }
+            }, 1000);
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="vlc-logo">
+            <i class="fas fa-play-circle"></i>
+        </div>
+
+        <h1>使用VLC媒体播放器</h1>
+
+        <p>正在尝试启动VLC播放视频...</p>
+
+        <div class="step">
+            <span class="step-number">1</span> 如果您看到VLC正在启动，请稍候...
+        </div>
+
+        <div class="step">
+            <span class="step-number">2</span> 如果VLC没有自动启动，请点击下面的按钮：
+        </div>
+
+        <a href="{{ vlc_url }}" class="btn-open">
+            <i class="fas fa-external-link-alt"></i> 在VLC中打开
+        </a>
+
+        <div class="step">
+            <span class="step-number">3</span> 如果VLC未安装，请下载并安装：
+        </div>
+
+        <a href="https://www.videolan.org/vlc/" target="_blank" class="btn-download">
+            <i class="fas fa-download"></i> 下载VLC
+        </a>
+
+        <p class="auto-open">
+            正在尝试自动打开VLC...如果没有反应，请手动点击按钮
+        </p>
+    </div>
+</body>
+</html>

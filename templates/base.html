@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mac文件服务器</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        const maxFileSize = {{ config.MAX_CONTENT_LENGTH }};
+        const allowedExtensions = {{ config.ALLOWED_EXTENSIONS | tojson }};
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <h1>Mac文件服务器</h1>
+            </div>
+            <div class="server-info">
+                <p>上传目录: {{ config.UPLOAD_FOLDER }}</p>
+                <p>时间: {{ now | format_time }}</p>
+            </div>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash flash-{{ category }}">
+                            {{ message }}
+                            <span class="close-flash" onclick="this.parentElement.style.display='none'">&times;</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+
+        <footer>
+            <p>© 2023 Mac文件服务器 | 在macOS上运行</p>
+        </footer>
+    </div>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>清除本地存储</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>清除本地存储</h1>
+        <p>此页面用于查看和清除浏览器的localStorage数据，解决文件上传问题。</p>
+        
+        <button onclick="showStorage()">查看当前存储</button>
+        <button onclick="clearUserStorage()">清除用户数据</button>
+        <button onclick="clearAllStorage()">清除所有存储</button>
+        
+        <div id="storage-content">
+            <h2>存储内容：</h2>
+            <pre id="storage-data">点击上方按钮查看</pre>
+        </div>
+    </div>
+
+    <script>
+        function showStorage() {
+            const storageData = {};
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                storageData[key] = localStorage.getItem(key);
+            }
+            document.getElementById('storage-data').textContent = JSON.stringify(storageData, null, 2);
+        }
+
+        function clearUserStorage() {
+            localStorage.removeItem('user');
+            localStorage.removeItem('users');
+            alert('用户数据已清除！请重新登录系统。');
+            showStorage();
+        }
+
+        function clearAllStorage() {
+            localStorage.clear();
+            alert('所有本地存储已清除！请重新登录系统。');
+            showStorage();
+        }
+    </script>
+</body>
+</html>

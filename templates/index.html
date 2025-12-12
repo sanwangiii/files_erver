@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件预览服务器</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* 基础样式 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+            padding: 15px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+            overflow: hidden;
+            padding: 20px;
+        }
+
+        /* 面包屑导航 */
+        .breadcrumb {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 12px 0;
+            margin-bottom: 20px;
+            font-size: 15px;
+            overflow-x: auto;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .breadcrumb a {
+            color: #3498db;
+            text-decoration: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+
+        .breadcrumb a:hover {
+            background-color: #e3f2fd;
+        }
+
+        .breadcrumb span {
+            color: #adb5bd;
+            margin: 0 5px;
+        }
+
+        /* 配置控件 */
+        .config-controls {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .config-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .config-option {
+            display: flex;
+            align-items: center;
+            padding: 8px 15px;
+            border-radius: 4px;
+            background-color: #e9ecef;
+            color: #495057;
+            text-decoration: none;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .config-option:hover {
+            background-color: #dee2e6;
+        }
+
+        .config-option i {
+            margin-right: 8px;
+        }
+
+        /* 排序控件 */
+        .sort-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.05);
+        }
+
+        .sort-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sort-title {
+            font-weight: 600;
+            font-size: 16px;
+            color: #495057;
+        }
+
+        .sort-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .sort-option {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 14px;
+            border-radius: 6px;
+            background-color: #e9ecef;
+            color: #495057;
+            text-decoration: none;
+            transition: all 0.3s;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+
+        .sort-option:hover {
+            background-color: #dee2e6;
+        }
+
+        .sort-option.active {
+            background-color: #3498db;
+            color: white;
+        }
+
+        .sort-option i {
+            margin-right: 8px;
+        }
+
+        .sort-direction {
+            display: flex;
+            align-items: center;
+        }
+
+        .direction-toggle {
+            display: flex;
+            align-items: center;
+            padding: 8px 14px;
+            border-radius: 6px;
+            background-color: #e9ecef;
+            color: #495057;
+            text-decoration: none;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .direction-toggle:hover {
+            background-color: #dee2e6;
+        }
+
+        .direction-toggle i {
+            margin-right: 8px;
+        }
+
+        /* 文件夹网格 */
+        .folders-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 18px;
+            margin-bottom: 30px;
+        }
+
+        .folder-card {
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            padding: 16px;
+            border: 1px solid #e9ecef;
+            transition: all 0.3s;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            position: relative;
+        }
+
+        .folder-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        }
+
+        .folder-icon {
+            font-size: 42px;
+            color: #ffc107;
+            margin-bottom: 12px;
+        }
+
+        .folder-name {
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            line-height: 1.4;
+            flex-grow: 1;
+        }
+
+        .folder-meta {
+            font-size: 13px;
+            color: #6c757d;
+            margin-top: 8px;
+        }
+
+        .folder-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+
+        .action-btn {
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .action-btn:hover {
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            right: 0;
+            background-color: white;
+            min-width: 200px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+            z-index: 1;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .dropdown-content a {
+            color: #495057;
+            padding: 10px 15px;
+            text-decoration: none;
+            display: block;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .dropdown-content a:hover {
+            background-color: #f8f9fa;
+        }
+
+        .dropdown:hover .dropdown-content {
+            display: block;
+        }
+
+        /* 文件网格 */
+        .files-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 18px;
+        }
+
+        .file-card {
+            background-color: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            position: relative;
+        }
+
+        .file-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+
+        .file-header {
+            display: flex;
+            align-items: center;
+            padding: 16px;
+            background-color: #f0f7ff;
+        }
+
+        .file-icon {
+            font-size: 24px;
+            color: #3498db;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        .file-name {
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            line-height: 1.4;
+            flex-grow: 1;
+            position: relative;
+            cursor: help;
+            transition: color 0.3s;
+        }
+
+        .file-name:hover {
+            color: #3498db;
+        }
+
+        /* Tooltip 样式 */
+        .file-name::after {
+            content: attr(data-full-name);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+            z-index: 1000;
+            margin-bottom: 8px;
+        }
+
+        .file-name:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* Tooltip 箭头 */
+        .file-name::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 6px;
+            border-style: solid;
+            border-color: rgba(0, 0, 0, 0.8) transparent transparent transparent;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+            z-index: 1000;
+        }
+
+        .file-name:hover::before {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        /* 已查阅标签样式 */
+        .viewed-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background-color: #2ecc71;
+            color: white;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+
+        .file-info {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+
+        .file-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #6c757d;
+            margin-top: 10px;
+        }
+
+        .file-action {
+            margin-top: 12px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .preview-btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 16px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .preview-btn:hover {
+            background-color: #2980b9;
+        }
+
+        .preview-btn i {
+            margin-right: 8px;
+        }
+
+        .file-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+
+        /* 空状态 */
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 40px 20px;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .empty-state i {
+            font-size: 48px;
+            color: #adb5bd;
+            margin-bottom: 20px;
+        }
+
+        .empty-state h3 {
+            font-size: 22px;
+            color: #495057;
+            margin-bottom: 10px;
+        }
+
+        .empty-state p {
+            color: #6c757d;
+            font-size: 16px;
+        }
+
+        /* 响应式设计 - 移动端优化 */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                padding: 15px;
+                border-radius: 10px;
+            }
+
+            .breadcrumb {
+                font-size: 14px;
+                padding: 8px 0;
+            }
+
+            .config-controls, .sort-controls {
+                padding: 12px;
+            }
+
+            .config-options, .sort-options {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                padding-bottom: 8px;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .folders-grid {
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                gap: 12px;
+            }
+
+            .files-grid {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+
+            .folder-card {
+                padding: 12px;
+            }
+
+            .folder-icon {
+                font-size: 36px;
+            }
+
+            .file-header {
+                padding: 12px;
+            }
+
+            .file-name {
+                -webkit-line-clamp: 4; /* 移动端显示更多行 */
+            }
+
+            .file-info {
+                padding: 12px;
+            }
+
+            .preview-btn {
+                padding: 8px 14px;
+                font-size: 13px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 12px;
+            }
+
+            .breadcrumb {
+                font-size: 13px;
+            }
+
+            .config-option, .sort-option, .direction-toggle {
+                padding: 7px 12px;
+                font-size: 13px;
+            }
+
+            .sort-title {
+                font-size: 15px;
+            }
+
+            .folders-grid {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            }
+
+            .folder-name {
+                font-size: 14px;
+            }
+
+            .folder-meta {
+                font-size: 12px;
+            }
+
+            .file-name {
+                font-size: 15px;
+            }
+
+            .file-meta {
+                font-size: 13px;
+            }
+
+            .empty-state {
+                padding: 30px 15px;
+            }
+
+            .empty-state i {
+                font-size: 40px;
+            }
+
+            .empty-state h3 {
+                font-size: 20px;
+            }
+
+            .empty-state p {
+                font-size: 15px;
+            }
+        }
+
+        /* 小屏幕优化 */
+        @media (max-width: 360px) {
+            .folders-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .config-options, .sort-options {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 获取已查阅文件列表
+            let viewedFiles = JSON.parse(localStorage.getItem('viewedFiles')) || [];
+            
+            // 为已查阅文件添加标签
+            document.querySelectorAll('.file-card').forEach(card => {
+                const fileNameElement = card.querySelector('.file-name');
+                const filePath = card.getAttribute('data-file-path');
+                
+                // 检查文件是否已查阅
+                if (viewedFiles.includes(filePath)) {
+                    const badge = document.createElement('span');
+                    badge.className = 'viewed-badge';
+                    badge.textContent = '已查阅';
+                    badge.innerHTML += ' <i class="fas fa-check-circle"></i>';
+                    fileNameElement.appendChild(badge);
+                }
+            });
+            
+            // 设置当前排序选项为活动状态
+            const currentSortBy = "{{ sort_by }}";
+            const sortOptions = document.querySelectorAll('.sort-option');
+
+            sortOptions.forEach(option => {
+                if (option.dataset.sortBy === currentSortBy) {
+                    option.classList.add('active');
+                }
+            });
+
+            // 设置当前排序方向图标
+            const sortOrder = "{{ sort_order }}";
+            const sortIcon = document.querySelector('.direction-toggle i');
+            const sortText = document.querySelector('.direction-toggle span');
+
+            if (sortOrder === 'asc') {
+                sortIcon.className = 'fas fa-sort-amount-down-alt';
+                sortText.textContent = '升序';
+            } else {
+                sortIcon.className = 'fas fa-sort-amount-up';
+                sortText.textContent = '降序';
+            }
+
+            // 隐藏文件/文件夹操作
+            document.querySelectorAll('.hide-file-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const filePath = this.dataset.filePath;
+                    hideItem('file', filePath);
+                });
+            });
+
+            document.querySelectorAll('.hide-extension-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const extension = this.dataset.extension;
+                    hideItem('extension', extension);
+                });
+            });
+
+            document.querySelectorAll('.hide-folder-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const folderPath = this.dataset.folderPath;
+                    hideItem('folder', folderPath);
+                });
+            });
+
+            function hideItem(type, value) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/hide_' + type;
+
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = type + '_path';
+                input.value = value;
+                form.appendChild(input);
+
+                const currentDir = document.createElement('input');
+                currentDir.type = 'hidden';
+                currentDir.name = 'current_dir';
+                currentDir.value = "{{ current_dir }}";
+                form.appendChild(currentDir);
+
+                document.body.appendChild(form);
+                form.submit();
+            }
+
+            // 移动端优化：滚动到顶部
+            window.scrollTo(0, 0);
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <!-- 面包屑导航 -->
+        <div class="breadcrumb">
+            <a href="{{ url_for('index') }}">首页</a>
+            {% if current_dir %}
+                {% set decoded_current_dir = urllib.parse.unquote(current_dir) %}
+                {% for part in decoded_current_dir.split('/') %}
+                    {% if part %}
+                        <span>/</span>
+                        {% set path_so_far = '/'.join(decoded_current_dir.split('/')[:loop.index]) %}
+                        {% set encoded_path_so_far = urllib.parse.quote(path_so_far) %}
+                        <a href="{{ url_for('index', dir=encoded_path_so_far, sort_by=sort_by, sort_order=sort_order) }}">{{ part }}</a>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <!-- 配置控件 -->
+        <div class="config-controls">
+            <div class="config-options">
+                <span>配置选项:</span>
+
+                <!-- 显示隐藏文件夹 -->
+                <a href="{{ url_for('toggle_hidden') }}" class="config-option">
+                    <i class="fas fa-folder"></i>
+                    {{ '隐藏' if show_hidden else '显示' }}系统文件夹
+                </a>
+
+                <!-- 显示配置文件 -->
+                <a href="{{ url_for('toggle_config_files') }}" class="config-option">
+                    <i class="fas fa-file"></i>
+                    {{ '隐藏' if show_config_files else '显示' }}配置文件
+                </a>
+            </div>
+        </div>
+
+        <!-- 排序控件 -->
+        <div class="sort-controls">
+            <div class="sort-header">
+                <div class="sort-title">排序方式</div>
+                <div class="sort-direction">
+                    <a href="{{ url_for('index', dir=current_dir, sort_by=sort_by, sort_order='asc' if sort_order == 'desc' else 'desc') }}"
+                       class="direction-toggle">
+                        <i class="fas fa-sort-amount-down-alt"></i>
+                        <span>升序</span>
+                    </a>
+                </div>
+            </div>
+
+            <div class="sort-options">
+                <!-- 名称排序 -->
+                <a href="{{ url_for('index', dir=current_dir, sort_by='name', sort_order=sort_order) }}"
+                   class="sort-option {% if sort_by == 'name' %}active{% endif %}"
+                   data-sort-by="name">
+                    <i class="fas fa-font"></i> 名称
+                </a>
+
+                <!-- 修改时间排序 -->
+                <a href="{{ url_for('index', dir=current_dir, sort_by='modified', sort_order=sort_order) }}"
+                   class="sort-option {% if sort_by == 'modified' %}active{% endif %}"
+                   data-sort-by="modified">
+                    <i class="fas fa-clock"></i> 修改时间
+                </a>
+
+                <!-- 大小排序 -->
+                <a href="{{ url_for('index', dir=current_dir, sort_by='size', sort_order=sort_order) }}"
+                   class="sort-option {% if sort_by == 'size' %}active{% endif %}"
+                   data-sort-by="size">
+                    <i class="fas fa-weight-hanging"></i> 大小
+                </a>
+
+                <!-- 类型排序 -->
+                <a href="{{ url_for('index', dir=current_dir, sort_by='type', sort_order=sort_order) }}"
+                   class="sort-option {% if sort_by == 'type' %}active{% endif %}"
+                   data-sort-by="type">
+                    <i class="fas fa-file"></i> 类型
+                </a>
+            </div>
+        </div>
+
+        <!-- 文件夹列表 -->
+        <div class="folders-grid">
+            {% for folder in folders %}
+            <div class="folder-card">
+                <a href="{{ url_for('index', dir=folder.safe_path, sort_by=sort_by, sort_order=sort_order) }}">
+                    <div class="folder-icon">
+                        <i class="fas fa-folder"></i>
+                    </div>
+                    <div class="folder-name">{{ folder.name }}</div>
+                    <div class="folder-meta">
+                        <span>{{ folder.modified | format_time('%Y-%m-%d') }}</span>
+                    </div>
+                </a>
+
+                <div class="folder-actions">
+                    <div class="dropdown">
+                        <button class="action-btn">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <div class="dropdown-content">
+                            <a href="#" class="hide-folder-btn" data-folder-path="{{ folder.path }}">
+                                <i class="fas fa-eye-slash"></i> 隐藏文件夹
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="fas fa-folder-open"></i>
+                <h3>没有文件夹</h3>
+                <p>当前目录中没有可显示的文件夹</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- 文件列表 -->
+        <div class="files-grid">
+            {% for file in files %}
+            <div class="file-card" data-file-path="{{ file.path }}">
+                <div class="file-header">
+                    <div class="file-icon">
+                        {% if file.type == 'video' %}
+                            <i class="fas fa-play-circle"></i>
+                        {% elif file.type == 'text' %}
+                            <i class="fas fa-file-alt"></i>
+                        {% else %}
+                            <i class="fas fa-file"></i>
+                        {% endif %}
+                    </div>
+                    <div class="file-name" data-full-name="{{ file.name }}">{{ file.name }}</div>
+                </div>
+
+                <div class="file-info">
+                    <div class="file-meta">
+                        <span>{{ file.size | format_size }}</span>
+                        <span>{{ file.modified | format_time('%Y-%m-%d') }}</span>
+                    </div>
+
+                    <div class="file-action">
+                        <a href="{{ file.preview_url }}" class="preview-btn">
+                            <i class="fas fa-eye"></i> 预览
+                        </a>
+                    </div>
+                </div>
+
+                <div class="file-actions">
+                    <div class="dropdown">
+                        <button class="action-btn">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <div class="dropdown-content">
+                            <a href="#" class="hide-file-btn" data-file-path="{{ file.path }}">
+                                <i class="fas fa-eye-slash"></i> 隐藏文件
+                            </a>
+                            <a href="#" class="hide-extension-btn" data-extension="{{ file.name.split('.')[-1] }}">
+                                <i class="fas fa-ban"></i> 隐藏所有 .{{ file.name.split('.')[-1] }} 文件
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="fas fa-file"></i>
+                <h3>没有文件</h3>
+                <p>当前目录中没有可显示的文件</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>
