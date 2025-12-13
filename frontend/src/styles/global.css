@@ -1051,6 +1051,53 @@ body {
     padding: 0 5px;
   }
 
+  /* 响应式设计 - 移动端文件名和文件夹名优化 */
+  @media (max-width: 480px) {
+    .folder-name {
+      font-size: 13px;
+      line-height: 1.3;
+      padding: 0 3px;
+    }
+    
+    .file-name {
+      font-size: 13px;
+      line-height: 1.3;
+      padding: 0 3px;
+    }
+  }
+
+  /* 超小屏幕优化 */
+  @media (max-width: 320px) {
+    .folder-name {
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    
+    .file-name {
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    
+    /* 在超小屏幕上允许文件名显示两行 */
+    .file-grid .file-name {
+      white-space: normal;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      text-overflow: ellipsis;
+    }
+    
+    .folder-grid .folder-name {
+      white-space: normal;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      text-overflow: ellipsis;
+    }
+  }
+
 /* 导航栏样式 */
 .navigation {
   display: flex;
