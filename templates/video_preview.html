@@ -396,11 +396,88 @@
         </div>
 
         <div class="video-player-container">
-            <video id="videoPlayer" controls autoplay playsinline>
+            <video id="videoPlayer" controls playsinline>
                 <source src="{{ video_url }}?token={{ token }}" type="video/mp4">
                 您的浏览器不支持视频播放。
             </video>
         </div>
+        <script>
+            // 确保视频自动播放和音量控件正常工作
+            document.addEventListener('DOMContentLoaded', function() {
+                const video = document.getElementById('videoPlayer');
+                if (video) {
+                    console.log('初始化后端视频:', video.src);
+                    
+                    // 设置视频控制选项
+                    video.controlsList = 'nodownload noremoteplayback';
+                    // 设置默认音量和静音状态
+                    video.volume = 0.5;
+                    video.muted = false;
+                    console.log('后端视频初始设置:', '音量:', video.volume, '静音:', video.muted);
+                    
+                    // 视频元数据加载完成后处理
+                    video.addEventListener('loadedmetadata', function() {
+                        console.log('后端视频元数据加载完成');
+                        video.volume = 0.5;
+                        video.muted = false;
+                        
+                        // 尝试自动播放
+                        video.play().then(() => {
+                            console.log('后端视频播放成功');
+                        }).catch(error => {
+                            console.log('后端视频自动播放失败:', error);
+                            // 如果播放失败，尝试设置静音后再播放
+                            video.muted = true;
+                            video.volume = 0.1;
+                            return video.play();
+                        });
+                    });
+                    
+                    // 视频可播放时处理
+                    video.addEventListener('canplay', function() {
+                        console.log('后端视频可播放');
+                        video.volume = 0.5;
+                        video.muted = false;
+                    });
+                    
+                    // 音量变化事件处理
+                    video.addEventListener('volumechange', function() {
+                        console.log('后端音量变化:', '音量:', video.volume, '静音:', video.muted);
+                        
+                        // 确保音量控件可用
+                        if (video.volume > 0) {
+                            video.muted = false;
+                        }
+                        
+                        // 如果用户将音量调到0，保持静音状态
+                        if (video.volume === 0) {
+                            video.muted = true;
+                        }
+                    });
+                    
+                    // 点击视频事件处理
+                    video.addEventListener('click', function() {
+                        console.log('后端视频被点击');
+                        if (video.paused) {
+                            video.play().catch(error => {
+                                console.log('后端点击后播放失败:', error);
+                                // 如果播放失败，设置静音后再播放
+                                video.muted = true;
+                                video.volume = 0.1;
+                                return video.play();
+                            });
+                        }
+                    });
+                    
+                    // 延迟设置音量，确保控件可用
+                    setTimeout(function() {
+                        console.log('后端延迟设置音量:', video.volume, video.muted);
+                        video.volume = 0.5;
+                        video.muted = false;
+                    }, 1000);
+                }
+            });
+        </script>
 
         <div class="video-controls">
             <button id="playPauseBtn" class="control-btn">

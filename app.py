@@ -202,6 +202,7 @@ def get_files(directory='', sort_by='name', sort_order='asc'):
     try:
         # 使用通用目录处理函数
         full_path, current_time, cache_key = process_directory(directory)
+        base_path = Path(MOBILE_HDD_PATH)  # 定义base_path变量
         
         if not full_path:
             return []
@@ -300,6 +301,7 @@ def get_folders(directory='', sort_by='name', sort_order='asc'):
     try:
         # 使用通用目录处理函数
         full_path, current_time, cache_key = process_directory(directory)
+        base_path = Path(MOBILE_HDD_PATH)  # 定义base_path变量
         
         if not full_path:
             return []
@@ -656,8 +658,8 @@ def vlc_redirect(filename):
     decoded_filename = urllib.parse.unquote(filename)
     file_path = Path(MOBILE_HDD_PATH) / decoded_filename
 
-    if not file_path.exists() or not file_path.is_file():
-        return "文件不存在", 404
+    if not file_path.exists():
+        return "文件或目录不存在", 404
 
     # 获取完整的HTTP视频链接，确保使用正确的主机名
     base_url = f"http://{request.host}"
@@ -665,10 +667,9 @@ def vlc_redirect(filename):
     # 获取token参数，确保在URL中包含token用于认证
     token = request.args.get('token')
     
-    # 创建视频URL，包含token参数用于认证
+    # 单个文件处理
     encoded_filename = urllib.parse.quote(decoded_filename)
     video_url = f"{base_url}/video/{encoded_filename}?token={token}"
-
     # 创建VLC协议URL
     vlc_protocol_url = f"vlc://{video_url}"
     
@@ -676,6 +677,8 @@ def vlc_redirect(filename):
         'vlc_redirect.html',
         vlc_url=vlc_protocol_url
     )
+
+
 
 
 @app.route('/api/preview_text/<path:filename>')

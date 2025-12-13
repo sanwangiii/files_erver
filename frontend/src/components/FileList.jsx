@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext, useRef } from 'react'
 import { AuthContext } from '../App'
 
 function FileList() {
+
   // 基础URL使用空字符串，这样会使用相对路径，从而利用Vite的代理配置
   const BASE_URL = '';
   
@@ -505,6 +506,8 @@ function FileList() {
             )}
           </div>
         )}
+        
+
         
         <div className="current-path">
           当前路径: {currentPath ? currentPath : '根目录'}

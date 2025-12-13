@@ -81,17 +81,13 @@ function Admin() {
     })
   }
 
-  // 加载用户数据
+  // 首次加载用户数据
   useEffect(() => {
     // 从localStorage加载用户数据
     const savedUsers = localStorage.getItem('users')
     if (savedUsers) {
-      let usersData = JSON.parse(savedUsers)
-      // 清理旧用户数据中的无效权限
-      usersData = cleanUserPermissions(usersData, folders)
+      const usersData = JSON.parse(savedUsers)
       setUsers(usersData)
-      // 更新localStorage中的用户数据
-      localStorage.setItem('users', JSON.stringify(usersData))
     } else {
       // 初始化默认用户数据（使用哈希密码）
       // 注意：实际使用时，权限应与实际文件夹列表匹配
@@ -121,7 +117,21 @@ function Admin() {
       setUsers(defaultUsers)
       localStorage.setItem('users', JSON.stringify(defaultUsers))
     }
-  }, [folders])
+  }, []) // 不依赖任何变量，只在组件首次加载时执行
+
+  // 当folders变化时，只清理权限，不重新加载用户数据
+  useEffect(() => {
+    if (folders.length > 0 && users.length > 0) {
+      const updatedUsers = cleanUserPermissions(users, folders)
+      // 只有当权限确实发生变化时才更新用户数据，避免无限循环
+      const permissionsChanged = JSON.stringify(updatedUsers) !== JSON.stringify(users)
+      if (permissionsChanged) {
+        setUsers(updatedUsers)
+        // 更新localStorage中的用户数据
+        localStorage.setItem('users', JSON.stringify(updatedUsers))
+      }
+    }
+  }, [folders, users]) // 依赖folders和users变量
 
   // 保存用户数据到localStorage
   useEffect(() => {

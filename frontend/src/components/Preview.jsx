@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useCallback } from 'react'
+import React, { useState, useEffect, useContext, useCallback, useRef } from 'react'
 import { AuthContext } from '../App'
 
 function Preview() {
@@ -7,6 +7,7 @@ function Preview() {
   const [previewLoading, setPreviewLoading] = useState(true)
   const [previewError, setPreviewError] = useState('')
   const { currentUser } = useContext(AuthContext)
+  const videoRef = useRef(null) // 添加视频元素引用
 
   const BACKEND_URL = 'http://192.168.1.18:8000'
 
@@ -54,7 +55,14 @@ function Preview() {
         setPreviewContent(data.content)
       } else if (params.type === 'image' || params.type === 'video') {
         // 图片或视频文件，直接显示
-        const fileUrl = `${BACKEND_URL}/file/${encodeURIComponent(params.path)}?token=${token}`
+        let fileUrl;
+        if (params.type === 'video') {
+          // 视频文件使用专门的视频流服务
+          fileUrl = `${BACKEND_URL}/video/${encodeURIComponent(params.path)}?token=${token}`;
+        } else {
+          // 图片文件使用通用文件服务
+          fileUrl = `${BACKEND_URL}/file/${encodeURIComponent(params.path)}?token=${token}`;
+        }
         setPreviewFile({
           name: params.name,
           preview_url: fileUrl,
@@ -86,6 +94,29 @@ function Preview() {
   useEffect(() => {
     handlePreview()
   }, [])
+
+  // 处理视频自动播放
+  useEffect(() => {
+    if (previewFile?.type === 'video' && videoRef.current) {
+      const video = videoRef.current;
+      console.log('初始化视频:', video.src);
+      
+      // 只设置基本的控件属性，不添加任何自定义的音量控制逻辑
+      video.controlsList = 'nodownload noremoteplayback';
+      
+      // 设置视频初始状态不静音
+      video.muted = false;
+      // 设置默认音量
+      video.volume = 0.5;
+      
+      console.log('视频初始设置:', '音量:', video.volume, '静音:', video.muted);
+      
+      // 清理事件监听器
+      return () => {
+        console.log('清理视频事件监听器');
+      };
+    }
+  }, [previewFile]);
 
   return (
     <div className="preview-container">
@@ -123,6 +154,7 @@ function Preview() {
             {previewFile.type === 'video' && (
               <div className="video-preview-container">
                 <video 
+                  ref={videoRef}
                   src={previewFile.preview_url}
                   className="video-preview"
                   controls
