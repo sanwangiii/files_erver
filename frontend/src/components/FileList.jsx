@@ -386,20 +386,23 @@ function FileList() {
   // 处理文件选择
   const handleFileSelect = (e) => {
     console.log('文件选择事件触发:', e);
-    const file = e.target.files[0];
-    if (file) {
-      console.log('选择的文件:', file.name, '大小:', file.size);
-      setUploadFile(file);
-      // 直接将文件传递给handleUpload，而不是依赖状态更新
-      handleUpload(file);
+    const selectedFiles = Array.from(e.target.files);
+    console.log('选择的文件数量:', selectedFiles.length);
+    
+    if (selectedFiles.length > 0) {
+      // 依次上传每个文件
+      selectedFiles.forEach((file, index) => {
+        console.log('上传文件', index + 1, '/', selectedFiles.length, ':', file.name, '大小:', file.size);
+        handleUpload(file);
+      });
     } else {
       console.log('没有选择文件');
     }
   }
 
   // 处理文件上传
-  const handleUpload = (fileToUpload = uploadFile) => {
-    console.log('handleUpload被调用，fileToUpload:', fileToUpload, 'uploadFile状态:', uploadFile, 'hasUploadPermission:', hasUploadPermission());
+  const handleUpload = (fileToUpload) => {
+    console.log('handleUpload被调用，fileToUpload:', fileToUpload, 'hasUploadPermission:', hasUploadPermission());
     if (!fileToUpload) {
       console.log('没有要上传的文件');
       return;
@@ -446,7 +449,6 @@ function FileList() {
         setAlertType('success');
         setShowAlert(true);
         fetchFiles();
-        setUploadFile(null);
         setUploadProgress(0);
       } else {
         try {
@@ -585,6 +587,8 @@ function FileList() {
               id="file-upload" 
               style={{ display: 'none' }} 
               onChange={handleFileSelect}
+              accept="image/*,video/*"
+              multiple
             />
             <label htmlFor="file-upload" className="btn btn-primary" disabled={uploading}>
               {uploading ? '上传中...' : '上传文件'}
