@@ -1,6 +1,7 @@
-import React, { useState, useEffect, createContext, useContext, useMemo } from 'react'
+import React, { useState, useEffect, createContext, useContext, useMemo, useCallback } from 'react'
 import Login from './components/Login'
 import FileList from './components/FileList'
+import Preview from './components/Preview'
 import Admin from './components/Admin'
 import Header from './components/Header'
 import Footer from './components/Footer'
@@ -21,8 +22,8 @@ function App() {
       const searchParams = new URLSearchParams(window.location.search)
       const dir = searchParams.get('dir') || ''
       
-      if (path === '/files') {
-        // /files路径已经是正确的，不需要修改
+      if (path === '/files' || path === '/preview') {
+        // /files和/preview路径已经是正确的，不需要修改
         return
       } else if (path !== '/') {
         // 其他路径转换为/files路径
@@ -43,7 +44,17 @@ function App() {
     // 加载已保存的用户信息
     const savedUser = localStorage.getItem('user')
     if (savedUser) {
-      const user = JSON.parse(savedUser)
+      let user = JSON.parse(savedUser)
+      // 如果用户没有token，为其生成一个
+      if (!user.token || !user.token.includes('-token')) {
+        const token = `${user.username}-token-${Date.now()}`
+        user = {
+          ...user,
+          token
+        }
+        // 更新localStorage中的用户信息
+        localStorage.setItem('user', JSON.stringify(user))
+      }
       setIsAuthenticated(true)
       setCurrentUser(user)
     }
@@ -61,35 +72,41 @@ function App() {
   }, [viewedFiles])
 
   // 登录处理
-  const handleLogin = (user) => {
-    // 创建一个不包含密码的用户对象
-    const userWithoutPassword = {
+  const handleLogin = useCallback((user) => {
+    // 生成包含'-token'的token，满足后端认证要求
+    const token = `${user.username}-token-${Date.now()}`
+    // 创建一个不包含密码但包含token的用户对象
+    const userWithToken = {
       ...user,
-      password: undefined // 移除密码字段
+      password: undefined, // 移除密码字段
+      token
     }
     setIsAuthenticated(true)
-    setCurrentUser(userWithoutPassword)
-    localStorage.setItem('user', JSON.stringify(userWithoutPassword))
-  }
+    setCurrentUser(userWithToken)
+    localStorage.setItem('user', JSON.stringify(userWithToken))
+    localStorage.setItem('isAuthenticated', 'true')
+  }, [])
 
   // 登出处理
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     setIsAuthenticated(false)
     setCurrentUser(null)
+    setViewedFiles([])
     localStorage.removeItem('user')
-  }
+    localStorage.removeItem('viewedFiles')
+  }, [])
 
-  // 添加已查阅文件
-  const addViewedFile = (filePath) => {
+  // 使用useCallback优化已查阅文件相关函数
+  const addViewedFile = useCallback((filePath) => {
     if (!viewedFiles.includes(filePath)) {
       setViewedFiles([...viewedFiles, filePath])
     }
-  }
+  }, [viewedFiles])
 
   // 检查文件是否已查阅
-  const isFileViewed = (filePath) => {
+  const isFileViewed = useCallback((filePath) => {
     return viewedFiles.includes(filePath)
-  }
+  }, [viewedFiles])
 
   // 管理员组件切换状态
   const [adminView, setAdminView] = useState('fileList')
@@ -104,39 +121,54 @@ function App() {
       addViewedFile,
       isFileViewed
     };
-  }, [isAuthenticated, currentUser, viewedFiles]);
+  }, [isAuthenticated, currentUser, handleLogin, handleLogout, addViewedFile, isFileViewed]);
+
+  // 路由处理
+  const getCurrentComponent = () => {
+    const path = window.location.pathname
+    
+    if (!isAuthenticated) {
+      return <Login />
+    }
+    
+    if (path === '/preview') {
+      return <Preview />
+    }
+    
+    if (currentUser.isAdmin) {
+      return (
+        <>
+          {/* 管理员导航菜单 */}
+          <div className="admin-nav">
+            <button 
+              className={adminView === 'fileList' ? 'active' : ''}
+              onClick={() => setAdminView('fileList')}
+            >
+              文件列表
+            </button>
+            <button 
+              className={adminView === 'admin' ? 'active' : ''}
+              onClick={() => setAdminView('admin')}
+            >
+              用户管理
+            </button>
+          </div>
+          
+          {/* 根据选择显示对应的组件 */}
+          {adminView === 'fileList' ? <FileList /> : <Admin />}
+        </>
+      )
+    }
+    
+    return <FileList />
+  }
 
   return (
     <AuthContext.Provider value={authContextValue}>
       <div className="app">
         <Header />
         <div className="container">
-          {!isAuthenticated ? (
-            <Login />
-          ) : currentUser.isAdmin ? (
-            <>
-              {/* 管理员导航菜单 */}
-              <div className="admin-nav">
-                <button 
-                  className={adminView === 'fileList' ? 'active' : ''}
-                  onClick={() => setAdminView('fileList')}
-                >
-                  文件列表
-                </button>
-                <button 
-                  className={adminView === 'admin' ? 'active' : ''}
-                  onClick={() => setAdminView('admin')}
-                >
-                  用户管理
-                </button>
-              </div>
-              
-              {/* 根据选择显示对应的组件 */}
-              {adminView === 'fileList' ? <FileList /> : <Admin />}
-            </>
-          ) : (
-            <FileList />
-          )}
+          {getCurrentComponent()}
         </div>
         <Footer />
       </div>

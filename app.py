@@ -175,21 +175,35 @@ HIDDEN_FILES = [
     '.folder_config.json', '.gitignore', '.htaccess'
 ]
 
-def get_files(directory='', sort_by='name', sort_order='asc'):
-    """获取指定目录中的文件（视频和文本）并排序（优化版）"""
+# 缓存有效期，单位：秒
+CACHE_DURATION = 30
+
+# 通用路径处理和缓存检查函数
+def process_directory(directory):
+    """处理目录路径和缓存检查的通用函数"""
     base_path = Path(MOBILE_HDD_PATH)
     current_time = time.time()
+    
+    # 安全处理目录路径
+    safe_directory = urllib.parse.unquote(directory)
+    full_path = base_path / safe_directory
+    cache_key = str(full_path)
 
+    logger.debug(f"扫描目录: {full_path}")
+
+    if not full_path.exists() or not full_path.is_dir():
+        logger.warning(f"目录不存在或不是文件夹: {full_path}")
+        return None, current_time, cache_key
+
+    return full_path, current_time, cache_key
+
+def get_files(directory='', sort_by='name', sort_order='asc'):
+    """获取指定目录中的文件（视频和文本）并排序（优化版）"""
     try:
-        # 安全处理目录路径
-        safe_directory = urllib.parse.unquote(directory)
-        full_path = base_path / safe_directory
-        cache_key = str(full_path)
-
-        logger.debug(f"扫描文件目录: {full_path}")
-
-        if not full_path.exists() or not full_path.is_dir():
-            logger.warning(f"目录不存在或不是文件夹: {full_path}")
+        # 使用通用目录处理函数
+        full_path, current_time, cache_key = process_directory(directory)
+        
+        if not full_path:
             return []
 
         # 检查缓存是否有效
@@ -272,12 +286,8 @@ def get_files(directory='', sort_by='name', sort_order='asc'):
         return []
 
 
-# 导入os模块用于更高效的目录遍历
-import os
-
 # 缓存字典，用于存储目录的文件夹列表，格式：{directory_path: (timestamp, folders_list)}
 folder_cache = {}
-CACHE_DURATION = 30  # 缓存有效期，单位：秒
 
 # 定义要隐藏的文件夹列表（移到函数外部，避免重复定义）
 HIDDEN_FOLDERS = [
@@ -287,19 +297,11 @@ HIDDEN_FOLDERS = [
 
 def get_folders(directory='', sort_by='name', sort_order='asc'):
     """获取指定目录中的文件夹并排序（优化版）"""
-    base_path = Path(MOBILE_HDD_PATH)
-    current_time = time.time()
-
     try:
-        # 安全处理目录路径
-        safe_directory = urllib.parse.unquote(directory)
-        full_path = base_path / safe_directory
-        cache_key = str(full_path)
-
-        logger.debug(f"扫描文件夹目录: {full_path}")
-
-        if not full_path.exists() or not full_path.is_dir():
-            logger.warning(f"目录不存在或不是文件夹: {full_path}")
+        # 使用通用目录处理函数
+        full_path, current_time, cache_key = process_directory(directory)
+        
+        if not full_path:
             return []
 
         # 检查缓存是否有效
@@ -588,45 +590,91 @@ def unhide_folder():
 @app.route('/preview/<path:filename>')
 @require_auth
 def preview_file(filename):
-    """视频预览页面"""
-    # 解码文件名
+    # 文件名已经是URL编码格式
     decoded_filename = urllib.parse.unquote(filename)
     file_path = Path(MOBILE_HDD_PATH) / decoded_filename
 
     if not file_path.exists() or not file_path.is_file():
         return "文件不存在", 404
 
-    # 获取父目录
-    parent_dir = os.path.dirname(decoded_filename)
-    safe_parent_dir = urllib.parse.quote(parent_dir) if parent_dir else ''
+    # 获取文件扩展名
+    file_ext = file_path.suffix.lower()[1:]  # 移除点号并转为小写
 
-    # 编码文件名用于URL
-    encoded_filename = urllib.parse.quote(decoded_filename)
-    
+    # 检查文件类型
+    if file_ext in VIDEO_EXTENSIONS:
+        # 视频文件，使用视频预览模板
+        
+        # 解码文件名，用于显示
+        decoded_filename = urllib.parse.unquote(filename)
+        
+        # 获取文件路径对象，用于获取文件名
+        file_path = Path(decoded_filename)
+        
+        # 获取父目录，用于返回按钮
+        parent_dir = os.path.dirname(decoded_filename)
+        safe_parent_dir = urllib.parse.quote(parent_dir) if parent_dir else ''
+
+        # 编码文件名用于URL
+        encoded_filename = urllib.parse.quote(decoded_filename)
+        
+        # 获取完整的HTTP视频链接，确保使用正确的主机名
+        # 使用request.host来获取当前请求的主机名和端口
+        base_url = f"http://{request.host}"
+        
+        # 获取token参数，确保在URL中包含token用于认证
+        token = request.args.get('token')
+        
+        # 创建视频URL，包含token参数用于认证
+        video_url = f"{base_url}/video/{encoded_filename}?token={token}"
+
+        # 创建VLC协议URL
+        vlc_protocol_url = f"vlc://{video_url}"
+        
+        # 获取token参数
+        token = request.args.get('token')
+        
+        return render_template(
+            'video_preview.html',
+            video_filename=encoded_filename,
+            video_title=file_path.name,
+            video_url=url_for('serve_video', filename=encoded_filename, _external=True),
+            parent_dir=safe_parent_dir,
+            vlc_protocol_url=vlc_protocol_url,
+            token=token  # 传递token参数给模板
+        )
+    elif file_ext in TEXT_EXTENSIONS:
+        # 文本文件，使用文本预览模板
+        return preview_text(filename)
+    else:
+        # 其他类型文件，返回404
+        return "不支持的文件类型", 404
+
+@app.route('/vlc_redirect/<path:filename>')
+@require_auth
+def vlc_redirect(filename):
+    # 文件名已经是URL编码格式
+    decoded_filename = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+
+    if not file_path.exists() or not file_path.is_file():
+        return "文件不存在", 404
+
     # 获取完整的HTTP视频链接，确保使用正确的主机名
-    # 使用request.host来获取当前请求的主机名和端口
     base_url = f"http://{request.host}"
     
     # 获取token参数，确保在URL中包含token用于认证
     token = request.args.get('token')
     
     # 创建视频URL，包含token参数用于认证
+    encoded_filename = urllib.parse.quote(decoded_filename)
     video_url = f"{base_url}/video/{encoded_filename}?token={token}"
 
     # 创建VLC协议URL
     vlc_protocol_url = f"vlc://{video_url}"
     
-    # 获取token参数
-    token = request.args.get('token')
-    
     return render_template(
-        'video_preview.html',
-        video_filename=encoded_filename,
-        video_title=file_path.name,
-        video_url=url_for('serve_video', filename=encoded_filename, _external=True),
-        parent_dir=safe_parent_dir,
-        vlc_protocol_url=vlc_protocol_url,
-        token=token  # 传递token参数给模板
+        'vlc_redirect.html',
+        vlc_url=vlc_protocol_url
     )
 
 
@@ -839,13 +887,26 @@ def serve_file(filename):
 
     # 设置下载文件名
     download_name = file_path.name
-
-    return send_file(
-        str(file_path),
-        as_attachment=True,
-        download_name=download_name,
-        conditional=True
-    )
+    
+    # 获取文件MIME类型
+    mime_type, _ = mimetypes.guess_type(file_path)
+    
+    # 对于视频和图片文件，直接在浏览器中预览
+    if mime_type and (mime_type.startswith('video/') or mime_type.startswith('image/')):
+        return send_file(
+            str(file_path),
+            as_attachment=False,
+            download_name=download_name,
+            conditional=True
+        )
+    # 其他文件类型作为附件下载
+    else:
+        return send_file(
+            str(file_path),
+            as_attachment=True,
+            download_name=download_name,
+            conditional=True
+        )
 
 
 @app.route('/static/<path:path>')

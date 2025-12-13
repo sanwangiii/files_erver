@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from 'react'
+import React, { useState, useContext, useEffect, useCallback } from 'react'
 import { AuthContext } from '../App'
 
 // 简单的MD5哈希函数（用于演示，实际项目应使用更安全的哈希算法）
@@ -13,42 +13,44 @@ const md5 = (str) => {
   return Math.abs(hash).toString(16);
 }
 
+// 默认用户数据常量
+const DEFAULT_USERS = [
+  {
+    id: 1,
+    username: 'admin',
+    password: md5('admin123'), // 哈希后的密码
+    isAdmin: true,
+    permissions: ['*'], // 管理员可以访问所有文件夹
+    token: 'admin-token' // 模拟认证token
+  },
+  {
+    id: 2,
+    username: 'user3',
+    password: md5('user123'), // 哈希后的密码
+    isAdmin: false,
+    permissions: [''], // 给普通用户添加根目录权限
+    token: 'user1-token' // 模拟认证token
+  },
+  {
+    id: 3,
+    username: 'user2',
+    password: md5('user123'), // 哈希后的密码
+    isAdmin: false,
+    permissions: [''], // 给普通用户添加根目录权限
+    token: 'user2-token' // 模拟认证token
+  }
+]
+
 function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [users, setUsers] = useState([])
+  const [showPassword, setShowPassword] = useState(false)
   const { handleLogin } = useContext(AuthContext)
 
   // 从localStorage加载用户数据和上次登录的用户名
   useEffect(() => {
-    // 定义默认用户数据（仅在第一次初始化时使用）
-    const defaultUsers = [
-      {
-        id: 1,
-        username: 'admin',
-        password: md5('admin123'), // 哈希后的密码
-        isAdmin: true,
-        permissions: ['*'], // 管理员可以访问所有文件夹
-        token: 'admin-token' // 模拟认证token
-      },
-      {        id: 2,
-        username: 'user3',
-        password: md5('user123'), // 哈希后的密码
-        isAdmin: false,
-        permissions: [''], // 给普通用户添加根目录权限
-        token: 'user1-token' // 模拟认证token
-      },
-      {
-        id: 3,
-        username: 'user2',
-        password: md5('user123'), // 哈希后的密码
-        isAdmin: false,
-        permissions: [''], // 给普通用户添加根目录权限
-        token: 'user2-token' // 模拟认证token
-      }
-    ]
-    
     // 加载用户数据
     const savedUsers = localStorage.getItem('users')
     if (savedUsers) {
@@ -56,8 +58,8 @@ function Login() {
       setUsers(JSON.parse(savedUsers))
     } else {
       // 仅在localStorage中没有用户数据时才初始化默认数据
-      setUsers(defaultUsers)
-      localStorage.setItem('users', JSON.stringify(defaultUsers))
+      setUsers(DEFAULT_USERS)
+      localStorage.setItem('users', JSON.stringify(DEFAULT_USERS))
     }
     
     // 加载上次登录的用户名
@@ -67,9 +69,15 @@ function Login() {
     }
   }, [])
 
-  const handleSubmit = (e) => {
+  const handleSubmit = useCallback((e) => {
     e.preventDefault()
     setError('')
+
+    // 验证输入
+    if (!username.trim() || !password.trim()) {
+      setError('请输入用户名和密码')
+      return
+    }
 
     // 查找用户（比较哈希后的密码）
     const user = users.find(u => u.username === username && u.password === md5(password))
@@ -85,8 +93,10 @@ function Login() {
       handleLogin(userWithoutPassword)
     } else {
       setError('用户名或密码错误')
+      // 清空密码字段
+      setPassword('')
     }
-  }
+  }, [username, password, users, handleLogin])
 
   return (
     <div className="login-form">
@@ -105,13 +115,28 @@ function Login() {
         </div>
         <div className="form-group">
           <label htmlFor="password">密码</label>
-          <input
-            type="password"
-            id="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <div className="password-input-container">
+            <input
+              type={showPassword ? "text" : "password"}
+              id="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="请输入密码"
+            />
+            <button
+              type="button"
+              className="toggle-password-btn"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? "隐藏密码" : "显示密码"}
+            >
+              {showPassword ? (
+                <i className="fas fa-eye-slash"></i>
+              ) : (
+                <i className="fas fa-eye"></i>
+              )}
+            </button>
+          </div>
         </div>
         <button type="submit" className="btn">登录</button>
       </form>

@@ -2,8 +2,8 @@ import React, { useState, useEffect, useContext, useRef } from 'react'
 import { AuthContext } from '../App'
 
 function FileList() {
-  // 基础URL
-  const BASE_URL = window.location.origin;
+  // 基础URL使用空字符串，这样会使用相对路径，从而利用Vite的代理配置
+  const BASE_URL = '';
   
   // 状态管理
   const [files, setFiles] = useState([])
@@ -16,15 +16,10 @@ function FileList() {
   const [sortBy, setSortBy] = useState('name')
   const [sortOrder, setSortOrder] = useState('asc')
   const [loading, setLoading] = useState(false)
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const [previewFile, setPreviewFile] = useState(null)
-  const [previewContent, setPreviewContent] = useState('')
-  const [previewLoading, setPreviewLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadFile, setUploadFile] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
   const { currentUser, isFileViewed, addViewedFile } = useContext(AuthContext)
-  const previewModalRef = useRef(null)
   
   // 自定义弹窗状态
   const [showAlert, setShowAlert] = useState(false)
@@ -63,12 +58,30 @@ function FileList() {
     };
   }, [isUpdatingUrl]);
 
+  // 检查用户是否有权限访问某个路径
+  const hasPermission = (path, user) => {
+    if (!user || user.isAdmin) return true;
+    if (user.permissions.includes('*')) return true;
+    
+    // 检查该路径是否在权限列表中
+    if (user.permissions.includes(path)) return true;
+    
+    // 检查该路径的父路径是否在权限列表中
+    const pathParts = path.split('/');
+    for (let i = 0; i < pathParts.length - 1; i++) {
+      const parentPath = pathParts.slice(0, i + 1).join('/');
+      if (user.permissions.includes(parentPath)) return true;
+    }
+    
+    return false;
+  };
+
   // 从API获取文件和文件夹数据
   const fetchFiles = async () => {
     setLoading(true)
     try {
       // 获取认证信息
-      const user = currentUser || JSON.parse(localStorage.getItem('user'))
+      const user = currentUser || JSON.parse(localStorage.getItem('user') || 'null') || null
       const response = await fetch(`${BASE_URL}/api/files?dir=${encodeURIComponent(currentPath)}&sort_by=${sortBy}&sort_order=${sortOrder}`, {
         headers: {
           'Authorization': `Bearer ${user?.token || ''}`
@@ -76,57 +89,20 @@ function FileList() {
       })
       const data = await response.json()
       
-      // 根据用户权限过滤文件夹
-      let filteredFolders = data.folders
+      // 根据用户权限过滤文件夹，确保始终是可迭代对象
+      let filteredFolders = data.folders || []
       if (user && !user.isAdmin) {
         filteredFolders = filteredFolders.filter(folder => {
-          // 如果用户有权限访问所有文件夹，直接返回
-          if (user.permissions.includes('*')) {
-            return true
-          }
-          
-          // 直接使用文件夹对象的path字段（已包含完整路径）
-          const folderFullPath = folder.path
-          
-          // 检查该文件夹是否在权限列表中
-          if (user.permissions.includes(folderFullPath)) {
-            return true
-          }
-          
-          // 检查该文件夹的父文件夹是否在权限列表中
-          // 例如，如果用户有权限访问folder1，那么应该能看到folder1的所有子文件夹
-          const folderPathParts = folderFullPath.split('/')
-          for (let i = 0; i < folderPathParts.length - 1; i++) {
-            const parentPath = folderPathParts.slice(0, i + 1).join('/')
-            if (user.permissions.includes(parentPath)) {
-              return true
-            }
-          }
-          
-          return false
+          return hasPermission(folder.path, user);
         })
       }
       setFolders(filteredFolders)
 
-      // 根据用户权限过滤文件
-      let filteredFiles = data.files
+      // 根据用户权限过滤文件，确保始终是可迭代对象
+      let filteredFiles = data.files || []
       if (user && !user.isAdmin) {
         filteredFiles = filteredFiles.filter(file => {
-          // 如果用户有权限访问所有文件夹，直接返回
-          if (user.permissions.includes('*')) {
-            return true
-          }
-          
-          // 检查文件的所有父文件夹是否在权限列表中
-          const filePathParts = file.path.split('/')
-          for (let i = 0; i < filePathParts.length - 1; i++) {
-            const folderPath = filePathParts.slice(0, i + 1).join('/')
-            if (user.permissions.includes(folderPath)) {
-              return true
-            }
-          }
-          
-          return false
+          return hasPermission(file.path, user);
         })
       }
       setFiles(filteredFiles)
@@ -264,25 +240,13 @@ function FileList() {
     // 标记文件为已查阅
     addViewedFile(file.path)
     
-    // 后端服务器地址（使用实际IP地址，允许其他设备访问）
-    const BACKEND_URL = 'http://192.168.1.18:8000';
-    
-    // 根据文件类型决定预览方式
-    if (file.type === 'image') {
-      // 图片文件，直接在模态框中显示
-      setPreviewFile({
-        name: file.name,
-        preview_url: `${BACKEND_URL}/file/${encodeURIComponent(file.path)}?token=${currentUser?.token || JSON.parse(localStorage.getItem('user'))?.token || ''}`,
-        type: 'image'
-      });
-      setPreviewOpen(true);
-    } else if (file.type === 'text') {
-      // 文本文件，获取内容后在模态框中显示
-      handleTextPreview(file);
-    } else if (file.type === 'video') {
-        // 视频文件，在新标签页中打开预览页面
-        const previewUrl = `${BACKEND_URL}/preview/${encodeURIComponent(file.path)}?token=${currentUser?.token || JSON.parse(localStorage.getItem('user'))?.token || ''}`;
-        window.open(previewUrl, '_blank');
+    if (file.type === 'image' || file.type === 'text' || file.type === 'video') {
+      // 图片、文本或视频文件，跳转到预览页面
+      const searchParams = new URLSearchParams()
+      searchParams.set('name', file.name)
+      searchParams.set('path', file.path)
+      searchParams.set('type', file.type)
+      window.location.href = `/preview?${searchParams.toString()}`
     } else {
       // 其他类型，显示提示信息
       setAlertType('info');
@@ -291,55 +255,9 @@ function FileList() {
     }
   }
   
-  // 处理文本文件预览
-  const handleTextPreview = async (file) => {
-    // 后端服务器地址（使用实际IP地址，允许其他设备访问）
-    const BACKEND_URL = 'http://192.168.1.18:8000';
-    
-    setPreviewFile({
-      name: file.name,
-      preview_url: `${BACKEND_URL}/api/preview_text/${encodeURIComponent(file.path)}`,
-      type: 'text'
-    });
-    setPreviewOpen(true);
-    
-    setPreviewLoading(true);
-    try {
-      const user = currentUser || JSON.parse(localStorage.getItem('user'));
-      const response = await fetch(`${BACKEND_URL}/api/preview_text/${encodeURIComponent(file.path)}?token=${user?.token || ''}`);
-      const data = await response.json();
-      setPreviewContent(data.content);
-    } catch (error) {
-      console.error('获取预览内容失败:', error);
-      setPreviewContent('无法加载文件内容');
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
+
   
-  // 关闭预览
-  const closePreview = () => {
-    setPreviewOpen(false)
-    setPreviewFile(null)
-    setPreviewContent('')
-  }
-  
-  // 点击模态框外部关闭预览
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (previewModalRef.current && !previewModalRef.current.contains(event.target)) {
-        closePreview()
-      }
-    }
-    
-    if (previewOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [previewOpen])
+
 
   // 处理文件夹点击
   const handleFolderClick = (folderName) => {
@@ -505,44 +423,6 @@ function FileList() {
   return (
     <div className="file-list-container">
       {loading && <div className="loading">加载中...</div>}
-      
-      {/* 预览模态框 */}
-      {previewOpen && previewFile && (
-        <div className="preview-modal-overlay">
-          <div className="preview-modal" ref={previewModalRef}>
-            <div className="preview-modal-header">
-              <h2>{previewFile.name}</h2>
-              <button className="close-preview-btn" onClick={closePreview}>
-                <i className="fas fa-times"></i>
-              </button>
-            </div>
-            
-            <div className="preview-modal-content">
-              {previewFile.type === 'text' && (
-                <div className="text-preview-container">
-                  {previewLoading ? (
-                    <div className="preview-loading">加载中...</div>
-                  ) : (
-                    <pre className="text-preview-content">{previewContent}</pre>
-                  )}
-                </div>
-              )}
-              
-              {previewFile.type === 'image' && (
-                <div className="image-preview-container">
-                  <img 
-                    src={`${previewFile.preview_url}?token=${currentUser?.token || JSON.parse(localStorage.getItem('user'))?.token || ''}`} 
-                    alt={previewFile.name}
-                    className="image-preview"
-                  />
-                </div>
-              )}
-              
-
-            </div>
-          </div>
-        </div>
-      )}
       <div className="sort-controls">
         <div className="sort-options">
           <button 

@@ -1,0 +1,152 @@
+import React, { useState, useEffect, useContext, useCallback } from 'react'
+import { AuthContext } from '../App'
+
+function Preview() {
+  const [previewFile, setPreviewFile] = useState(null)
+  const [previewContent, setPreviewContent] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(true)
+  const [previewError, setPreviewError] = useState('')
+  const { currentUser } = useContext(AuthContext)
+
+  const BACKEND_URL = 'http://192.168.1.18:8000'
+
+  // 获取URL参数
+  const getUrlParams = useCallback(() => {
+    const params = new URLSearchParams(window.location.search)
+    return {
+      name: params.get('name'),
+      path: params.get('path'),
+      type: params.get('type')
+    }
+  }, [])
+
+  // 处理预览
+  const handlePreview = async () => {
+    const params = getUrlParams()
+    if (!params.name || !params.path || !params.type) {
+      setPreviewError('文件参数不完整')
+      setPreviewLoading(false)
+      return
+    }
+
+    setPreviewLoading(true)
+    setPreviewError('')
+
+    try {
+      // 统一获取用户信息
+      const user = currentUser || JSON.parse(localStorage.getItem('user') || 'null') || null
+      const token = user?.token || ''
+      
+      if (params.type === 'text') {
+        // 文本文件，获取内容后显示
+        const response = await fetch(`${BACKEND_URL}/api/preview_text/${encodeURIComponent(params.path)}?token=${token}`)
+        if (!response.ok) {
+          throw new Error('预览失败，服务器错误')
+        }
+        const data = await response.json()
+        
+        setPreviewFile({
+          name: params.name,
+          preview_url: `${BACKEND_URL}/api/preview_text/${encodeURIComponent(params.path)}`,
+          type: params.type
+        })
+        
+        setPreviewContent(data.content)
+      } else if (params.type === 'image' || params.type === 'video') {
+        // 图片或视频文件，直接显示
+        const fileUrl = `${BACKEND_URL}/file/${encodeURIComponent(params.path)}?token=${token}`
+        setPreviewFile({
+          name: params.name,
+          preview_url: fileUrl,
+          vlc_url: params.type === 'video' ? `${BACKEND_URL}/vlc_redirect/${encodeURIComponent(params.path)}?token=${token}` : null,
+          type: params.type
+        })
+      }
+    } catch (error) {
+      console.error('预览失败:', error)
+      setPreviewError('预览失败，请检查文件权限或网络连接')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  // 处理VLC拉起功能
+  const handleVLCPlay = (vlcUrl) => {
+    if (vlcUrl) {
+      window.open(vlcUrl, '_blank')
+    }
+  }
+
+  // 返回文件列表
+  const goBack = () => {
+    window.history.back()
+  }
+
+  // 页面加载时处理预览
+  useEffect(() => {
+    handlePreview()
+  }, [])
+
+  return (
+    <div className="preview-container">
+      <div className="preview-header">
+        <button className="back-btn" onClick={goBack}>
+          <i className="fas fa-arrow-left"></i> 返回
+        </button>
+        <h1 className="preview-title">{previewFile?.name || '文件预览'}</h1>
+      </div>
+      
+      <div className="preview-content">
+        {previewLoading ? (
+          <div className="preview-loading">加载中...</div>
+        ) : previewError ? (
+          <div className="preview-error">{previewError}</div>
+        ) : previewFile ? (
+          <>
+            {previewFile.type === 'text' && (
+              <div className="text-preview-container">
+                <pre className="text-preview-content">{previewContent}</pre>
+              </div>
+            )}
+            
+            {previewFile.type === 'image' && (
+              <div className="image-preview-container">
+                <img 
+                  src={previewFile.preview_url}
+                  alt={previewFile.name}
+                  className="image-preview"
+                  onError={() => setPreviewError('图片加载失败')}
+                />
+              </div>
+            )}
+            
+            {previewFile.type === 'video' && (
+              <div className="video-preview-container">
+                <video 
+                  src={previewFile.preview_url}
+                  className="video-preview"
+                  controls
+                  playsInline
+                  preload="metadata"
+                  onError={() => setPreviewError('视频加载失败')}
+                />
+                <div className="video-actions">
+                  <button 
+                    className="vlc-play-btn"
+                    onClick={() => handleVLCPlay(previewFile.vlc_url)}
+                  >
+                    <i className="fas fa-play"></i> 使用VLC播放
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="preview-error">预览文件信息错误</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default Preview

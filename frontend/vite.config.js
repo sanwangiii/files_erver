@@ -8,18 +8,14 @@ export default defineConfig({
     port: 3000,
     historyApiFallback: true,
     proxy: {
-      // 专门处理/files路径，确保它不会被代理到后端服务器
-      '^/files(.*)$': {
+      // 专门处理/files和/preview路径，确保它们不会被代理到后端服务器
+      '^/(files|preview)(.*)$': {
         target: 'http://localhost:3000',
         rewrite: () => '/index.html',
         changeOrigin: false
       },
       // 代理其他API路径
       '/api': {
-        target: 'http://192.168.1.18:8000',
-        changeOrigin: true
-      },
-      '/preview': {
         target: 'http://192.168.1.18:8000',
         changeOrigin: true
       },
