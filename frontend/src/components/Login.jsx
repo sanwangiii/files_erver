@@ -49,19 +49,8 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const { handleLogin } = useContext(AuthContext)
 
-  // 从localStorage加载用户数据和上次登录的用户名
+  // 从后端加载用户数据和上次登录的用户名
   useEffect(() => {
-    // 加载用户数据
-    const savedUsers = localStorage.getItem('users')
-    if (savedUsers) {
-      // 使用localStorage中已有的用户数据，不再自动覆盖
-      setUsers(JSON.parse(savedUsers))
-    } else {
-      // 仅在localStorage中没有用户数据时才初始化默认数据
-      setUsers(DEFAULT_USERS)
-      localStorage.setItem('users', JSON.stringify(DEFAULT_USERS))
-    }
-    
     // 加载上次登录的用户名
     const lastUsername = localStorage.getItem('lastUsername')
     if (lastUsername) {
@@ -69,7 +58,7 @@ function Login() {
     }
   }, [])
 
-  const handleSubmit = useCallback((e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault()
     setError('')
 
@@ -79,24 +68,42 @@ function Login() {
       return
     }
 
-    // 查找用户（比较哈希后的密码）
-    const user = users.find(u => u.username === username && u.password === md5(password))
+    try {
+      // 向后端发送登录请求
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          username: username,
+          password: md5(password) // 使用哈希后的密码
+        })
+      })
 
-    if (user) {
-      // 创建一个不包含密码的用户对象用于登录
-      const userWithoutPassword = {
-        ...user,
-        password: undefined // 移除密码字段
+      const data = await response.json()
+
+      if (response.ok && data.user) {
+        // 创建一个不包含密码的用户对象用于登录
+        const userWithoutPassword = {
+          ...data.user,
+          password: undefined // 移除密码字段
+        }
+        // 存储上次登录的用户名
+        localStorage.setItem('lastUsername', username)
+        handleLogin(userWithoutPassword)
+      } else {
+        setError(data.error || '用户名或密码错误')
+        // 清空密码字段
+        setPassword('')
       }
-      // 存储上次登录的用户名
-      localStorage.setItem('lastUsername', username)
-      handleLogin(userWithoutPassword)
-    } else {
-      setError('用户名或密码错误')
+    } catch (error) {
+      console.error('登录请求失败:', error)
+      setError('登录失败，请检查网络连接或稍后重试')
       // 清空密码字段
       setPassword('')
     }
-  }, [username, password, users, handleLogin])
+  }, [username, password, handleLogin])
 
   return (
     <div className="login-form">

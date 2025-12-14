@@ -73,13 +73,10 @@ function App() {
 
   // 登录处理
   const handleLogin = useCallback((user) => {
-    // 生成包含'-token'的token，满足后端认证要求
-    const token = `${user.username}-token-${Date.now()}`
-    // 创建一个不包含密码但包含token的用户对象
+    // 直接使用后端返回的用户对象（已包含token）
     const userWithToken = {
       ...user,
-      password: undefined, // 移除密码字段
-      token
+      password: undefined // 确保移除密码字段
     }
     setIsAuthenticated(true)
     setCurrentUser(userWithToken)

@@ -81,91 +81,65 @@ function Admin() {
     })
   }
 
+  // 从后端加载用户数据
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch('/api/users')
+      if (response.ok) {
+        const data = await response.json()
+        setUsers(data.users)
+      } else {
+        console.error('获取用户列表失败')
+        setMessage('获取用户列表失败')
+      }
+    } catch (error) {
+      console.error('获取用户列表请求失败:', error)
+      setMessage('获取用户列表请求失败')
+    }
+  }
+
   // 首次加载用户数据
   useEffect(() => {
-    // 从localStorage加载用户数据
-    const savedUsers = localStorage.getItem('users')
-    if (savedUsers) {
-      const usersData = JSON.parse(savedUsers)
-      setUsers(usersData)
-    } else {
-      // 初始化默认用户数据（使用哈希密码）
-      // 注意：实际使用时，权限应与实际文件夹列表匹配
-      const defaultUsers = [
-        {
-          id: 1,
-          username: 'admin',
-          password: md5('admin123'), // 哈希后的密码
-          isAdmin: true,
-          permissions: ['*']
-        },
-        {
-          id: 2,
-          username: 'user1',
-          password: md5('user123'), // 哈希后的密码
-          isAdmin: false,
-          permissions: [] // 默认不设置具体权限，避免显示不存在的文件夹
-        },
-        {
-          id: 3,
-          username: 'user2',
-          password: md5('user123'), // 哈希后的密码
-          isAdmin: false,
-          permissions: [] // 默认不设置具体权限，避免显示不存在的文件夹
-        }
-      ]
-      setUsers(defaultUsers)
-      localStorage.setItem('users', JSON.stringify(defaultUsers))
-    }
+    fetchUsers()
   }, []) // 不依赖任何变量，只在组件首次加载时执行
 
-  // 当folders变化时，只清理权限，不重新加载用户数据
-  useEffect(() => {
-    if (folders.length > 0 && users.length > 0) {
-      const updatedUsers = cleanUserPermissions(users, folders)
-      // 只有当权限确实发生变化时才更新用户数据，避免无限循环
-      const permissionsChanged = JSON.stringify(updatedUsers) !== JSON.stringify(users)
-      if (permissionsChanged) {
-        setUsers(updatedUsers)
-        // 更新localStorage中的用户数据
-        localStorage.setItem('users', JSON.stringify(updatedUsers))
-      }
-    }
-  }, [folders, users]) // 依赖folders和users变量
-
-  // 保存用户数据到localStorage
-  useEffect(() => {
-    if (users.length > 0) {
-      localStorage.setItem('users', JSON.stringify(users))
-    }
-  }, [users])
-
   // 处理添加用户
-  const handleAddUser = (e) => {
+  const handleAddUser = async (e) => {
     e.preventDefault()
     
-    // 检查用户名是否已存在
-    if (users.find(user => user.username === newUser.username)) {
-      setMessage('用户名已存在')
-      return
+    try {
+      // 哈希密码
+      const hashedPassword = md5(newUser.password)
+      
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ...newUser,
+          password: hashedPassword
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        // 更新用户列表
+        setUsers([...users, data.user])
+        setNewUser({ username: '', password: '', isAdmin: false, permissions: [] })
+        setShowAddForm(false)
+        setMessage('用户添加成功')
+        
+        // 3秒后清除消息
+        setTimeout(() => setMessage(''), 3000)
+      } else {
+        const data = await response.json()
+        setMessage(data.error || '添加用户失败')
+      }
+    } catch (error) {
+      console.error('添加用户请求失败:', error)
+      setMessage('添加用户请求失败')
     }
-
-    // 创建新用户，生成一个简单的token，并哈希密码
-    const user = {
-      id: Date.now(),
-      ...newUser,
-      password: md5(newUser.password), // 哈希后的密码
-      token: `${newUser.username}-token` // 生成token
-    }
-
-    // 添加到用户列表
-    setUsers([...users, user])
-    setNewUser({ username: '', password: '', isAdmin: false, permissions: [] })
-    setShowAddForm(false)
-    setMessage('用户添加成功')
-
-    // 3秒后清除消息
-    setTimeout(() => setMessage(''), 3000)
   }
 
   // 处理编辑用户
@@ -175,35 +149,53 @@ function Admin() {
   }
 
   // 处理保存编辑后的用户
-  const handleSaveEdit = (e) => {
+  const handleSaveEdit = async (e) => {
     e.preventDefault()
 
-    // 更新用户列表，确保保留原始token和哈希密码
-      const updatedUsers = users.map(user => {
-        if (user.id === editingUser.id) {
-          // 如果editingUser没有token，保留原始user的token
-          if (!editingUser.token && user.token) {
-            editingUser.token = user.token
-          }
-          // 如果密码发生了变化，哈希新密码
-          if (editingUser.password !== user.password) {
-            editingUser.password = md5(editingUser.password)
-          }
-          return editingUser
-        }
-        return user
+    try {
+      // 准备要更新的数据
+      const updateData = { ...editingUser }
+      
+      // 如果密码被修改，哈希新密码
+      if (updateData.password && updateData.password.length < 32) { // 假设md5哈希是32位
+        updateData.password = md5(updateData.password)
+      }
+      
+      const response = await fetch(`/api/users/${editingUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updateData)
       })
 
-    setUsers(updatedUsers)
-    setEditingUser(null)
-    setMessage('用户更新成功')
-
-    // 3秒后清除消息
-    setTimeout(() => setMessage(''), 3000)
+      if (response.ok) {
+        const data = await response.json()
+        // 更新用户列表
+        const updatedUsers = users.map(user => {
+          if (user.id === editingUser.id) {
+            return data.user
+          }
+          return user
+        })
+        setUsers(updatedUsers)
+        setEditingUser(null)
+        setMessage('用户更新成功')
+        
+        // 3秒后清除消息
+        setTimeout(() => setMessage(''), 3000)
+      } else {
+        const data = await response.json()
+        setMessage(data.error || '更新用户失败')
+      }
+    } catch (error) {
+      console.error('更新用户请求失败:', error)
+      setMessage('更新用户请求失败')
+    }
   }
 
   // 处理删除用户
-  const handleDeleteUser = (userId) => {
+  const handleDeleteUser = async (userId) => {
     // 不能删除管理员用户
     const userToDelete = users.find(user => user.id === userId)
     if (userToDelete.isAdmin) {
@@ -214,12 +206,27 @@ function Admin() {
 
     // 确认删除
     if (window.confirm('确定要删除此用户吗？')) {
-      const updatedUsers = users.filter(user => user.id !== userId)
-      setUsers(updatedUsers)
-      setMessage('用户删除成功')
+      try {
+        const response = await fetch(`/api/users/${userId}`, {
+          method: 'DELETE'
+        })
 
-      // 3秒后清除消息
-      setTimeout(() => setMessage(''), 3000)
+        if (response.ok) {
+          // 过滤掉要删除的用户
+          const updatedUsers = users.filter(user => user.id !== userId)
+          setUsers(updatedUsers)
+          setMessage('用户删除成功')
+
+          // 3秒后清除消息
+          setTimeout(() => setMessage(''), 3000)
+        } else {
+          const data = await response.json()
+          setMessage(data.error || '删除用户失败')
+        }
+      } catch (error) {
+        console.error('删除用户请求失败:', error)
+        setMessage('删除用户请求失败')
+      }
     }
   }
 

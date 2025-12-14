@@ -1,0 +1,27 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "sanwangi",
+      "password": "1ddc7dc8",
+      "isAdmin": true,
+      "permissions": [
+        "*"
+      ],
+      "token": "sanwangi-token-1765711464"
+    },
+    {
+      "id": 2,
+      "username": "liu",
+      "password": "56760663",
+      "isAdmin": false,
+      "permissions": [
+        "动漫",
+        "宝宝",
+        "张头铁",
+        "电视剧"
+      ],
+      "token": "liu-token-1765711530"
+    }
+  ]
+}

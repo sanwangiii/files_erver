@@ -9,8 +9,6 @@ function Preview() {
   const { currentUser } = useContext(AuthContext)
   const videoRef = useRef(null) // 添加视频元素引用
 
-  const BACKEND_URL = 'http://192.168.1.18:8000'
-
   // 获取URL参数
   const getUrlParams = useCallback(() => {
     const params = new URLSearchParams(window.location.search)
@@ -40,7 +38,7 @@ function Preview() {
       
       if (params.type === 'text') {
         // 文本文件，获取内容后显示
-        const response = await fetch(`${BACKEND_URL}/api/preview_text/${encodeURIComponent(params.path)}?token=${token}`)
+        const response = await fetch(`/api/preview_text/${encodeURIComponent(params.path)}?token=${token}`)
         if (!response.ok) {
           throw new Error('预览失败，服务器错误')
         }
@@ -48,25 +46,18 @@ function Preview() {
         
         setPreviewFile({
           name: params.name,
-          preview_url: `${BACKEND_URL}/api/preview_text/${encodeURIComponent(params.path)}`,
+          preview_url: `/api/preview_text/${encodeURIComponent(params.path)}`,
           type: params.type
         })
-        
         setPreviewContent(data.content)
       } else if (params.type === 'image' || params.type === 'video') {
-        // 图片或视频文件，直接显示
-        let fileUrl;
-        if (params.type === 'video') {
-          // 视频文件使用专门的视频流服务
-          fileUrl = `${BACKEND_URL}/video/${encodeURIComponent(params.path)}?token=${token}`;
-        } else {
-          // 图片文件使用通用文件服务
-          fileUrl = `${BACKEND_URL}/file/${encodeURIComponent(params.path)}?token=${token}`;
-        }
+        // 图片或视频文件，直接使用文件URL
+        const fileUrl = `/file/${encodeURIComponent(params.path)}?token=${token}`
+        
         setPreviewFile({
           name: params.name,
           preview_url: fileUrl,
-          vlc_url: params.type === 'video' ? `${BACKEND_URL}/vlc_redirect/${encodeURIComponent(params.path)}?token=${token}` : null,
+          vlc_url: params.type === 'video' ? `/vlc_redirect/${encodeURIComponent(params.path)}?token=${token}` : null,
           type: params.type
         })
       }
@@ -78,55 +69,34 @@ function Preview() {
     }
   }
 
-  // 处理VLC拉起功能
-  const handleVLCPlay = (vlcUrl) => {
-    if (vlcUrl) {
-      window.open(vlcUrl, '_blank')
+  // 使用相对路径打开新窗口
+  const openInNewWindow = (url) => {
+    if (url) {
+      window.open(url, '_blank')
     }
   }
 
-  // 返回文件列表
+  // 返回上一页
   const goBack = () => {
     window.history.back()
   }
 
-  // 页面加载时处理预览
+  // 组件挂载时加载预览
   useEffect(() => {
     handlePreview()
   }, [])
 
-  // 处理视频自动播放
-  useEffect(() => {
-    if (previewFile?.type === 'video' && videoRef.current) {
-      const video = videoRef.current;
-      console.log('初始化视频:', video.src);
-      
-      // 只设置基本的控件属性，不添加任何自定义的音量控制逻辑
-      video.controlsList = 'nodownload noremoteplayback';
-      
-      // 设置视频初始状态不静音
-      video.muted = false;
-      // 设置默认音量
-      video.volume = 0.5;
-      
-      console.log('视频初始设置:', '音量:', video.volume, '静音:', video.muted);
-      
-      // 清理事件监听器
-      return () => {
-        console.log('清理视频事件监听器');
-      };
-    }
-  }, [previewFile]);
-
   return (
     <div className="preview-container">
+      {/* 预览头部 */}
       <div className="preview-header">
         <button className="back-btn" onClick={goBack}>
           <i className="fas fa-arrow-left"></i> 返回
         </button>
         <h1 className="preview-title">{previewFile?.name || '文件预览'}</h1>
       </div>
-      
+
+      {/* 预览内容 */}
       <div className="preview-content">
         {previewLoading ? (
           <div className="preview-loading">加载中...</div>
@@ -134,15 +104,17 @@ function Preview() {
           <div className="preview-error">{previewError}</div>
         ) : previewFile ? (
           <>
+            {/* 文本预览 */}
             {previewFile.type === 'text' && (
               <div className="text-preview-container">
                 <pre className="text-preview-content">{previewContent}</pre>
               </div>
             )}
-            
+
+            {/* 图片预览 */}
             {previewFile.type === 'image' && (
               <div className="image-preview-container">
-                <img 
+                <img
                   src={previewFile.preview_url}
                   alt={previewFile.name}
                   className="image-preview"
@@ -150,10 +122,11 @@ function Preview() {
                 />
               </div>
             )}
-            
+
+            {/* 视频预览 */}
             {previewFile.type === 'video' && (
               <div className="video-preview-container">
-                <video 
+                <video
                   ref={videoRef}
                   src={previewFile.preview_url}
                   className="video-preview"
@@ -163,9 +136,9 @@ function Preview() {
                   onError={() => setPreviewError('视频加载失败')}
                 />
                 <div className="video-actions">
-                  <button 
+                  <button
                     className="vlc-play-btn"
-                    onClick={() => handleVLCPlay(previewFile.vlc_url)}
+                    onClick={() => openInNewWindow(previewFile.vlc_url)}
                   >
                     <i className="fas fa-play"></i> 使用VLC播放
                   </button>

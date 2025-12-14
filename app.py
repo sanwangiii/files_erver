@@ -44,6 +44,192 @@ app.config['UPLOAD_FOLDER'] = '/tmp'  # 临时上传目录
 # 启用CORS，允许所有来源的请求
 CORS(app)
 
+# 获取当前服务器IP的API端点
+@app.route('/api/server_info', methods=['GET'])
+def get_server_info():
+    """获取服务器信息，包括当前IP地址"""
+    import socket
+    
+    # 获取当前主机名
+    hostname = socket.gethostname()
+    
+    # 获取当前IP地址
+    try:
+        # 创建一个UDP套接字连接到外部服务器，以获取当前网络接口的IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip_address = s.getsockname()[0]
+        s.close()
+    except Exception:
+        # 如果无法连接到外部服务器，尝试获取本地IP
+        ip_address = socket.gethostbyname(hostname)
+    
+    # 获取所有网络接口信息（可选，用于调试）
+    interfaces = {}
+    try:
+        import subprocess
+        result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+        interfaces['ifconfig_output'] = result.stdout
+    except Exception:
+        pass
+    
+    return jsonify({
+        'hostname': hostname,
+        'ip_address': ip_address,
+        'interfaces': interfaces,
+        'port': 3001,
+        'message': '当前文件服务器的访问地址：http://{}:3001'.format(ip_address)
+    })
+
+# 用户登录API
+@app.route('/api/login', methods=['POST'])
+def login():
+    """用户登录验证"""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return jsonify({'error': '用户名和密码不能为空'}), 400
+        
+        users = load_users()
+        user = next((u for u in users if u['username'] == username and u['password'] == password), None)
+        
+        if user:
+            # 生成新的token
+            import time
+            user_with_token = {
+                **user,
+                'token': f"{username}-token-{int(time.time())}"
+            }
+            return jsonify({'user': user_with_token})
+        else:
+            return jsonify({'error': '用户名或密码错误'}), 401
+    except Exception as e:
+        logger.error(f"登录失败: {e}")
+        return jsonify({'error': '登录失败，请稍后重试'}), 500
+
+# 获取用户列表API
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    """获取所有用户列表"""
+    try:
+        users = load_users()
+        # 删除密码字段，避免泄露
+        users_without_password = [{k: v for k, v in user.items() if k != 'password'} for user in users]
+        return jsonify({'users': users_without_password})
+    except Exception as e:
+        logger.error(f"获取用户列表失败: {e}")
+        return jsonify({'error': '获取用户列表失败'}), 500
+
+# 添加用户API
+@app.route('/api/users', methods=['POST'])
+def add_user():
+    """添加新用户"""
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        is_admin = data.get('isAdmin', False)
+        permissions = data.get('permissions', [])
+        
+        if not username or not password:
+            return jsonify({'error': '用户名和密码不能为空'}), 400
+        
+        users = load_users()
+        
+        # 检查用户名是否已存在
+        if any(u['username'] == username for u in users):
+            return jsonify({'error': '用户名已存在'}), 400
+        
+        # 创建新用户
+        new_user = {
+            'id': max(u['id'] for u in users) + 1 if users else 1,
+            'username': username,
+            'password': password,
+            'isAdmin': is_admin,
+            'permissions': permissions,
+            'token': f"{username}-token-{int(time.time())}"
+        }
+        
+        users.append(new_user)
+        if save_users(users):
+            # 返回不含密码的用户信息
+            user_without_password = {k: v for k, v in new_user.items() if k != 'password'}
+            return jsonify({'user': user_without_password}), 201
+        else:
+            return jsonify({'error': '保存用户失败'}), 500
+    except Exception as e:
+        logger.error(f"添加用户失败: {e}")
+        return jsonify({'error': '添加用户失败'}), 500
+
+# 编辑用户API
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+def edit_user(user_id):
+    """编辑现有用户"""
+    try:
+        data = request.get_json()
+        users = load_users()
+        
+        # 查找要编辑的用户
+        user_index = next((i for i, u in enumerate(users) if u['id'] == user_id), None)
+        if user_index is None:
+            return jsonify({'error': '用户不存在'}), 404
+        
+        # 更新用户信息
+        user = users[user_index]
+        if 'username' in data:
+            user['username'] = data['username']
+        if 'password' in data and data['password']:
+            user['password'] = data['password']
+        if 'isAdmin' in data:
+            user['isAdmin'] = data['isAdmin']
+        if 'permissions' in data:
+            user['permissions'] = data['permissions']
+        
+        # 更新token
+        import time
+        user['token'] = f"{user['username']}-token-{int(time.time())}"
+        
+        users[user_index] = user
+        if save_users(users):
+            # 返回不含密码的用户信息
+            user_without_password = {k: v for k, v in user.items() if k != 'password'}
+            return jsonify({'user': user_without_password})
+        else:
+            return jsonify({'error': '保存用户失败'}), 500
+    except Exception as e:
+        logger.error(f"编辑用户失败: {e}")
+        return jsonify({'error': '编辑用户失败'}), 500
+
+# 删除用户API
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    """删除现有用户"""
+    try:
+        users = load_users()
+        
+        # 检查用户是否存在
+        user = next((u for u in users if u['id'] == user_id), None)
+        if not user:
+            return jsonify({'error': '用户不存在'}), 404
+        
+        # 不允许删除最后一个管理员
+        admin_users = [u for u in users if u['isAdmin']]
+        if len(admin_users) == 1 and admin_users[0]['id'] == user_id:
+            return jsonify({'error': '不能删除最后一个管理员'}), 400
+        
+        # 删除用户
+        users = [u for u in users if u['id'] != user_id]
+        if save_users(users):
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': '删除用户失败'}), 500
+    except Exception as e:
+        logger.error(f"删除用户失败: {e}")
+        return jsonify({'error': '删除用户失败'}), 500
+
 # 配置日志
 logger = logging.getLogger('FilePreviewServer')
 logger.setLevel(logging.WARNING)  # 设置为DEBUG级别以便调试
@@ -52,6 +238,32 @@ logger.setLevel(logging.WARNING)  # 设置为DEBUG级别以便调试
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logger.addHandler(console_handler)
+
+# 用户数据存储文件路径
+USERS_FILE_PATH = Path(__file__).parent / "users.json"
+
+# 加载用户数据
+def load_users():
+    """从JSON文件加载用户数据"""
+    try:
+        if USERS_FILE_PATH.exists():
+            with open(USERS_FILE_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f).get('users', [])
+        return []
+    except Exception as e:
+        logger.error(f"加载用户数据失败: {e}")
+        return []
+
+# 保存用户数据
+def save_users(users):
+    """将用户数据保存到JSON文件"""
+    try:
+        with open(USERS_FILE_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'users': users}, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"保存用户数据失败: {e}")
+        return False
 
 # 简单的认证装饰器
 from functools import wraps
@@ -1075,16 +1287,60 @@ if __name__ == '__main__':
     # 初始化文件夹配置文件
     if not FOLDER_CONFIG_PATH.exists():
         save_folder_config(load_folder_config())
-    # 获取本机IP地址
+    
+    # 获取本机IP地址的更可靠方法
     import socket
-
+    import subprocess
+    
     hostname = socket.gethostname()
-    ip_address = socket.gethostbyname(hostname)
-
-    print(f"文件预览服务器正在运行...")
-    print(f"请访问: http://localhost:8000")
-    print(f"局域网访问: http://{ip_address}:8000")
-    print(f"文件目录: {MOBILE_HDD_PATH}")
+    
+    # 尝试获取局域网IP地址的多种方法
+    ip_address = None
+    
+    # 方法1: 使用UDP套接字连接外部服务器获取当前网络接口IP
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip_address = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pass
+    
+    # 方法2: 如果方法1失败，尝试使用ifconfig命令获取IP地址
+    if not ip_address:
+        try:
+            result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+            import re
+            ip_matches = re.findall(r'inet\s+(\d+\.\d+\.\d+\.\d+)\s+netmask', result.stdout)
+            for ip in ip_matches:
+                if not ip.startswith('127.'):
+                    ip_address = ip
+                    break
+        except Exception:
+            pass
+    
+    # 方法3: 如果以上方法都失败，使用传统方法
+    if not ip_address:
+        ip_address = socket.gethostbyname(hostname)
+    
+    # 显示启动信息和所有可访问地址
+    print("=========================================")
+    print("文件预览服务器正在运行...")
+    print("=========================================")
+    print(f"📁 文件目录: {MOBILE_HDD_PATH}")
+    print()
+    print("📱 可访问地址列表：")
+    print(f"   本地访问：http://localhost:8000")
+    print(f"   局域网访问：http://{ip_address}:8000")
+    print(f"   mDNS访问：http://{hostname}.local:8000")
+    print()
+    print("🔗 前端访问地址：")
+    print(f"   本地访问：http://localhost:3001")
+    print(f"   局域网访问：http://{ip_address}:3001")
+    print(f"   mDNS访问：http://{hostname}.local:3001")
+    print()
+    print("=========================================")
+    print()
 
     # 启动服务器
     app.run(host='0.0.0.0', port=8000, debug=False)
