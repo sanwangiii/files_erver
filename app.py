@@ -818,12 +818,6 @@ def preview_file(filename):
     if file_ext in VIDEO_EXTENSIONS:
         # 视频文件，使用视频预览模板
         
-        # 解码文件名，用于显示
-        decoded_filename = urllib.parse.unquote(filename)
-        
-        # 获取文件路径对象，用于获取文件名
-        file_path = Path(decoded_filename)
-        
         # 获取父目录，用于返回按钮
         parent_dir = os.path.dirname(decoded_filename)
         safe_parent_dir = urllib.parse.quote(parent_dir) if parent_dir else ''
@@ -843,9 +837,6 @@ def preview_file(filename):
 
         # 创建VLC协议URL
         vlc_protocol_url = f"vlc://{video_url}"
-        
-        # 获取token参数
-        token = request.args.get('token')
         
         return render_template(
             'video_preview.html',
@@ -873,21 +864,25 @@ def vlc_redirect(filename):
     if not file_path.exists():
         return "文件或目录不存在", 404
 
-    # 获取完整的HTTP视频链接，确保使用正确的主机名
-    base_url = f"http://{request.host}"
+    # 获取完整的HTTP文件链接，确保使用局域网IP地址
+    # 使用get_server_ip_address()函数获取服务器的局域网IP
+    server_ip = get_server_ip_address()
+    base_url = f"http://{server_ip}:8000"
     
     # 获取token参数，确保在URL中包含token用于认证
     token = request.args.get('token')
     
     # 单个文件处理
     encoded_filename = urllib.parse.quote(decoded_filename)
-    video_url = f"{base_url}/video/{encoded_filename}?token={token}"
-    # 创建VLC协议URL
-    vlc_protocol_url = f"vlc://{video_url}"
+    # 先创建HTTP URL
+    http_url = f"{base_url}/file/{encoded_filename}?token={token}"
+    # 创建VLC协议URL，使用vlc://前缀来触发VLC播放器
+    vlc_protocol_url = f"vlc://{http_url}"
     
     return render_template(
         'vlc_redirect.html',
-        vlc_url=vlc_protocol_url
+        vlc_url=vlc_protocol_url,
+        http_url=http_url
     )
 
 
@@ -1292,36 +1287,38 @@ if __name__ == '__main__':
     import socket
     import subprocess
     
-    hostname = socket.gethostname()
-    
-    # 尝试获取局域网IP地址的多种方法
-    ip_address = None
-    
-    # 方法1: 使用UDP套接字连接外部服务器获取当前网络接口IP
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 80))
-        ip_address = s.getsockname()[0]
-        s.close()
-    except Exception:
-        pass
-    
-    # 方法2: 如果方法1失败，尝试使用ifconfig命令获取IP地址
-    if not ip_address:
+    def get_server_ip_address():
+        """获取服务器的局域网IP地址"""
+        ip_address = None
+        
+        # 方法1: 使用UDP套接字连接外部服务器获取当前网络接口IP
         try:
-            result = subprocess.run(['ifconfig'], capture_output=True, text=True)
-            import re
-            ip_matches = re.findall(r'inet\s+(\d+\.\d+\.\d+\.\d+)\s+netmask', result.stdout)
-            for ip in ip_matches:
-                if not ip.startswith('127.'):
-                    ip_address = ip
-                    break
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(('8.8.8.8', 80))
+            ip_address = s.getsockname()[0]
+            s.close()
         except Exception:
             pass
-    
-    # 方法3: 如果以上方法都失败，使用传统方法
-    if not ip_address:
-        ip_address = socket.gethostbyname(hostname)
+        
+        # 方法2: 如果方法1失败，尝试使用ifconfig命令获取IP地址
+        if not ip_address:
+            try:
+                result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+                import re
+                ip_matches = re.findall(r'inet\s+(\d+\.\d+\.\d+\.\d+)\s+netmask', result.stdout)
+                for ip in ip_matches:
+                    if not ip.startswith('127.'):
+                        ip_address = ip
+                        break
+            except Exception:
+                pass
+        
+        # 方法3: 如果以上方法都失败，使用传统方法
+        if not ip_address:
+            hostname = socket.gethostname()
+            ip_address = socket.gethostbyname(hostname)
+        
+        return ip_address
     
     # 显示启动信息和所有可访问地址
     print("=========================================")
@@ -1331,12 +1328,14 @@ if __name__ == '__main__':
     print()
     print("📱 可访问地址列表：")
     print(f"   本地访问：http://localhost:8000")
-    print(f"   局域网访问：http://{ip_address}:8000")
+    print(f"   局域网访问：http://{get_server_ip_address()}:8000")
+    import socket
+    hostname = socket.gethostname()
     print(f"   mDNS访问：http://{hostname}.local:8000")
     print()
     print("🔗 前端访问地址：")
     print(f"   本地访问：http://localhost:3001")
-    print(f"   局域网访问：http://{ip_address}:3001")
+    print(f"   局域网访问：http://{get_server_ip_address()}:3001")
     print(f"   mDNS访问：http://{hostname}.local:3001")
     print()
     print("=========================================")

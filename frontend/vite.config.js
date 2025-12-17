@@ -9,8 +9,14 @@ export default defineConfig({
     historyApiFallback: true,
     allowedHosts: ['localhost', 'sanwangdemac-mini.local', 'sanwangi.file'],
     proxy: {
-      // 专门处理/files和/preview路径，确保它们不会被代理到后端服务器
-      '^/(files|preview)(.*)$': {
+      // 专门处理/files路径，确保它不会被代理到后端服务器
+      '^/files(.*)$': {
+        target: 'http://localhost:3001',
+        rewrite: () => '/index.html',
+        changeOrigin: false
+      },
+      // 专门处理/preview路径，确保它不会被代理到后端服务器
+      '^/preview(.*)$': {
         target: 'http://localhost:3001',
         rewrite: () => '/index.html',
         changeOrigin: false
@@ -29,6 +35,11 @@ export default defineConfig({
         changeOrigin: true
       },
       '/file': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      // 添加VLC重定向代理配置
+      '/vlc_redirect': {
         target: 'http://localhost:8000',
         changeOrigin: true
       }

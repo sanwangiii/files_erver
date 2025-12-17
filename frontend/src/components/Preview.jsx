@@ -6,7 +6,7 @@ function Preview() {
   const [previewContent, setPreviewContent] = useState('')
   const [previewLoading, setPreviewLoading] = useState(true)
   const [previewError, setPreviewError] = useState('')
-  const { currentUser } = useContext(AuthContext)
+  const { currentUser, addViewedFile } = useContext(AuthContext)
   const videoRef = useRef(null) // 添加视频元素引用
 
   // 获取URL参数
@@ -14,13 +14,13 @@ function Preview() {
     const params = new URLSearchParams(window.location.search)
     return {
       name: params.get('name'),
-      path: params.get('path'),
+      path: decodeURIComponent(params.get('path') || ''), // 解码path参数
       type: params.get('type')
     }
   }, [])
 
   // 处理预览
-  const handlePreview = async () => {
+  const handlePreview = useCallback(async () => {
     const params = getUrlParams()
     if (!params.name || !params.path || !params.type) {
       setPreviewError('文件参数不完整')
@@ -51,23 +51,39 @@ function Preview() {
         })
         setPreviewContent(data.content)
       } else if (params.type === 'image' || params.type === 'video') {
-        // 图片或视频文件，直接使用文件URL
-        const fileUrl = `/file/${encodeURIComponent(params.path)}?token=${token}`
+        // 图片或视频文件，直接使用相对路径的文件URL
+        const fileUrl = params.type === 'video' 
+          ? `/video/${encodeURIComponent(params.path)}?token=${token}` 
+          : `/file/${encodeURIComponent(params.path)}?token=${token}`;
+        
+        // 构建完整的HTTP URL用于VLC播放
+        const hostname = window.location.hostname;
+        const port = window.location.port;
+        const protocol = window.location.protocol;
+        
+        // 构建完整的HTTP URL
+        const fullHttpUrl = `${protocol}//${hostname}${port ? ':' + port : ''}${fileUrl}`;
+        
+        // 直接构建VLC协议URL，使用vlc://前缀来触发VLC播放器
+        const vlcProtocolUrl = `vlc://${fullHttpUrl}`;
         
         setPreviewFile({
           name: params.name,
           preview_url: fileUrl,
-          vlc_url: params.type === 'video' ? `/vlc_redirect/${encodeURIComponent(params.path)}?token=${token}` : null,
+          vlc_url: params.type === 'video' ? vlcProtocolUrl : null,
           type: params.type
         })
       }
+      
+      // 标记文件为已查阅
+      addViewedFile(params.path);
     } catch (error) {
       console.error('预览失败:', error)
       setPreviewError('预览失败，请检查文件权限或网络连接')
     } finally {
       setPreviewLoading(false)
     }
-  }
+  }, [getUrlParams, currentUser, addViewedFile])
 
   // 使用相对路径打开新窗口
   const openInNewWindow = (url) => {
@@ -78,13 +94,14 @@ function Preview() {
 
   // 返回上一页
   const goBack = () => {
+    // 使用history.back()返回上一页，保持浏览上下文
     window.history.back()
   }
 
   // 组件挂载时加载预览
   useEffect(() => {
     handlePreview()
-  }, [])
+  }, [handlePreview])
 
   return (
     <div className="preview-container">

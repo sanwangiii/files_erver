@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>清除已阅文件记录</title>
+</head>
+<body>
+  <h1>清除已阅文件记录</h1>
+  <button onclick="clearViewedFiles()">清除已阅文件记录</button>
+  <p id="result"></p>
+
+  <script>
+    function clearViewedFiles() {
+      localStorage.removeItem('viewedFiles');
+      document.getElementById('result').textContent = '已阅文件记录已清除，请刷新文件列表页面。';
+    }
+  </script>
+</body>
+</html>

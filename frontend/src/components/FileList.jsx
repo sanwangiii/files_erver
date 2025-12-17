@@ -239,13 +239,15 @@ function FileList() {
   // 处理文件预览
   const handlePreview = (file) => {
     // 标记文件为已查阅
+    console.log('FileList.jsx - handlePreview被调用，文件信息:', file);
     addViewedFile(file.path)
+    console.log('FileList.jsx - addViewedFile已调用，文件路径:', file.path);
     
     if (file.type === 'image' || file.type === 'text' || file.type === 'video') {
       // 图片、文本或视频文件，跳转到预览页面
       const searchParams = new URLSearchParams()
       searchParams.set('name', file.name)
-      searchParams.set('path', file.path)
+      searchParams.set('path', encodeURIComponent(file.path)) // 编码path参数
       searchParams.set('type', file.type)
       window.location.href = `/preview?${searchParams.toString()}`
     } else {
@@ -541,28 +543,32 @@ function FileList() {
 
       <h2>文件</h2>
       <div className="file-grid">
-        {sortedFiles.map(file => (
-          <div key={file.path} className="file-card">
-            <div className="file-icon">
-              {getFileIcon(file.type)}
+        {sortedFiles.map(file => {
+          console.log('渲染文件:', file.name, '路径:', file.path);
+          console.log('isFileViewed调用:', file.path, '结果:', isFileViewed(file.path));
+          return (
+            <div key={file.path} className="file-card">
+              <div className="file-icon">
+                {getFileIcon(file.type)}
+              </div>
+              <div className="file-name-container">
+                <span className="file-name">{file.name}</span>
+                {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
+              </div>
+              <div className="file-meta">
+                <div>大小: {formatSize(file.size)}</div>
+                <div>修改时间: {formatTime(file.modified)}</div>
+                <div>类型: {file.type}</div>
+              </div>
+              <button 
+                className="btn" 
+                onClick={() => handlePreview(file)}
+              >
+                预览
+              </button>
             </div>
-            <div className="file-name">
-              {file.name}
-              {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
-            </div>
-            <div className="file-meta">
-              <div>大小: {formatSize(file.size)}</div>
-              <div>修改时间: {formatTime(file.modified)}</div>
-              <div>类型: {file.type}</div>
-            </div>
-            <button 
-              className="btn" 
-              onClick={() => handlePreview(file)}
-            >
-              预览
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {currentPath && (
@@ -644,6 +650,45 @@ const customAlertStyles = `
   
 
   
+  /* 文件名样式 */
+  .file-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    font-size: 14px;
+    line-height: 1.4;
+    width: 100%;
+    text-align: center;
+    word-break: break-word;
+    hyphens: auto;
+  }
+
+  /* 文件名容器样式 */
+  .file-name-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 0 5px;
+    margin-bottom: 5px;
+  }
+
+  /* 已阅徽章样式 */
+  .viewed-badge {
+    display: inline-block;
+    background-color: #52c41a;
+    color: white;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight: normal;
+    white-space: nowrap;
+  }
+
   /* 加载状态样式 */
   .preview-loading {
     text-align: center;

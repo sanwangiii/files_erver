@@ -10,9 +10,14 @@ import Footer from './components/Footer'
 export const AuthContext = createContext()
 
 function App() {
+  // 状态管理
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
-  const [viewedFiles, setViewedFiles] = useState([])
+  const [viewedFiles, setViewedFiles] = useState(() => {
+    // 初始化时从localStorage加载已查阅文件
+    const savedViewedFiles = localStorage.getItem('viewedFiles')
+    return savedViewedFiles ? JSON.parse(savedViewedFiles) : []
+  })
 
   // 从localStorage加载认证状态和已查阅文件
   useEffect(() => {
@@ -58,12 +63,6 @@ function App() {
       setIsAuthenticated(true)
       setCurrentUser(user)
     }
-    
-    // 加载已查阅文件
-    const savedViewedFiles = localStorage.getItem('viewedFiles')
-    if (savedViewedFiles) {
-      setViewedFiles(JSON.parse(savedViewedFiles))
-    }
   }, [])
 
   // 保存已查阅文件到localStorage
@@ -95,14 +94,24 @@ function App() {
 
   // 使用useCallback优化已查阅文件相关函数
   const addViewedFile = useCallback((filePath) => {
-    if (!viewedFiles.includes(filePath)) {
-      setViewedFiles([...viewedFiles, filePath])
-    }
-  }, [viewedFiles])
+    console.log('addViewedFile被调用，文件路径:', filePath);
+    setViewedFiles(prevViewedFiles => {
+      console.log('当前已阅文件列表:', prevViewedFiles);
+      if (!prevViewedFiles.includes(filePath)) {
+        const newViewedFiles = [...prevViewedFiles, filePath]
+        console.log('更新后的已阅文件列表:', newViewedFiles);
+        return newViewedFiles
+      }
+      console.log('文件已经在已阅列表中，不做更新');
+      return prevViewedFiles
+    })
+  }, [])
 
   // 检查文件是否已查阅
   const isFileViewed = useCallback((filePath) => {
-    return viewedFiles.includes(filePath)
+    const result = viewedFiles.includes(filePath)
+    console.log('检查文件是否已阅，文件路径:', filePath, '结果:', result);
+    return result
   }, [viewedFiles])
 
   // 管理员组件切换状态
