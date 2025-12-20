@@ -12,7 +12,11 @@ export const AuthContext = createContext()
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
-  const [viewedFiles, setViewedFiles] = useState([])
+  const [viewedFiles, setViewedFiles] = useState(() => {
+    // 初始化时直接从localStorage加载已查阅文件列表
+    const savedViewedFiles = localStorage.getItem('viewedFiles')
+    return savedViewedFiles ? JSON.parse(savedViewedFiles) : []
+  })
 
   // 从localStorage加载认证状态和已查阅文件
   useEffect(() => {
@@ -59,11 +63,7 @@ function App() {
       setCurrentUser(user)
     }
     
-    // 加载已查阅文件
-    const savedViewedFiles = localStorage.getItem('viewedFiles')
-    if (savedViewedFiles) {
-      setViewedFiles(JSON.parse(savedViewedFiles))
-    }
+
   }, [])
 
   // 保存已查阅文件到localStorage

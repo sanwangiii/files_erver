@@ -35,12 +35,7 @@ function FileList() {
   // 监听URL变化
   useEffect(() => {
     const handleUrlChange = () => {
-      // 如果是前端代码更新URL，不执行任何操作
-      if (isUpdatingUrl) {
-        setIsUpdatingUrl(false);
-        return;
-      }
-      
+      // 从URL查询参数中获取dir值
       const searchParams = new URLSearchParams(window.location.search);
       const dir = searchParams.get('dir') || '';
       setCurrentPath(dir);
@@ -49,15 +44,13 @@ function FileList() {
     // 初始加载时检查
     handleUrlChange();
 
-    // 监听URL变化
+    // 监听URL变化（仅当用户使用浏览器前进/后退按钮时）
     window.addEventListener('popstate', handleUrlChange);
-    window.addEventListener('hashchange', handleUrlChange);
 
     return () => {
       window.removeEventListener('popstate', handleUrlChange);
-      window.removeEventListener('hashchange', handleUrlChange);
     };
-  }, [isUpdatingUrl]);
+  }, []);
 
   // 检查用户是否有权限访问某个路径
   const hasPermission = (path, user) => {
@@ -119,15 +112,30 @@ function FileList() {
   // 加载文件和文件夹数据
   useEffect(() => {
     fetchFiles()
+    
+    // 恢复滚动位置
+    const savedScrollPosition = sessionStorage.getItem('scrollPosition')
+    if (savedScrollPosition) {
+      setTimeout(() => {
+        window.scrollTo(0, parseInt(savedScrollPosition, 10))
+        sessionStorage.removeItem('scrollPosition')
+      }, 100)
+    }
   }, [currentPath, sortBy, sortOrder])
 
   // 当路径变化时，更新URL查询参数
   useEffect(() => {
-    setIsUpdatingUrl(true); // 设置标志，表示是前端代码更新URL
-    if (currentPath) {
-      window.history.pushState(null, '', `/files?dir=${encodeURIComponent(currentPath)}`)
-    } else {
-      window.history.pushState(null, '', '/files')
+    // 检查当前URL的dir参数是否与currentPath一致
+    const searchParams = new URLSearchParams(window.location.search);
+    const currentUrlDir = searchParams.get('dir') || '';
+    
+    // 只有当URL中的dir参数与currentPath不一致时，才更新URL
+    if (currentUrlDir !== currentPath) {
+      if (currentPath) {
+        window.history.pushState(null, '', `/files?dir=${encodeURIComponent(currentPath)}`)
+      } else {
+        window.history.pushState(null, '', '/files')
+      }
     }
   }, [currentPath])
 
@@ -243,11 +251,19 @@ function FileList() {
     
     if (file.type === 'image' || file.type === 'text' || file.type === 'video') {
       // 图片、文本或视频文件，跳转到预览页面
+      // 使用传统的页面跳转方式，确保浏览器正确处理历史记录
       const searchParams = new URLSearchParams()
       searchParams.set('name', file.name)
       searchParams.set('path', file.path)
       searchParams.set('type', file.type)
-      window.location.href = `/preview?${searchParams.toString()}`
+      const previewUrl = `/preview?${searchParams.toString()}`
+      
+      // 保存当前滚动位置
+      const scrollPosition = window.scrollY
+      sessionStorage.setItem('scrollPosition', scrollPosition.toString())
+      
+      // 使用传统的页面跳转方式
+      window.location.href = previewUrl
     } else {
       // 其他类型，显示提示信息
       setAlertType('info');
@@ -547,7 +563,7 @@ function FileList() {
               {getFileIcon(file.type)}
             </div>
             <div className="file-name">
-              {file.name}
+              <span className="file-name-text">{file.name}</span>
               {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
             </div>
             <div className="file-meta">
@@ -640,9 +656,41 @@ const customAlertStyles = `
     min-width: 80px;
   }
   
-
+  /* 文件卡片样式优化 */
+  .file-name {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    overflow: hidden;
+    position: relative;
+  }
   
-
+  /* 已查阅标签样式优化 */
+  .viewed-badge {
+    background-color: #52c41a;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  
+  /* 文件名称文本样式 */
+  .file-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.4;
+    flex-grow: 1;
+  }
+  
+  
+  
   
   /* 加载状态样式 */
   .preview-loading {

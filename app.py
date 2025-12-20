@@ -78,7 +78,7 @@ def get_server_info():
         'ip_address': ip_address,
         'interfaces': interfaces,
         'port': 3001,
-        'message': '当前文件服务器的访问地址：http://{}:3001'.format(ip_address)
+        'message': '当前文件服务器的访问地址：http://localhost:8000 或 http://{}:8000'.format(ip_address)
     })
 
 # 用户登录API
@@ -639,66 +639,9 @@ def format_time(timestamp, fmt=None):
 
 
 @app.route('/')
-@require_auth
 def index():
-    """主页面 - 显示文件列表"""
-    try:
-        current_dir = request.args.get('dir', '')
-        logger.debug(f"当前目录参数: {current_dir}")
-
-        # 获取排序参数
-        sort_by = request.args.get('sort_by', 'name')  # 默认按名称排序
-        sort_order = request.args.get('sort_order', 'asc')  # 默认升序
-
-        # 解码当前目录参数
-        decoded_current_dir = urllib.parse.unquote(current_dir)
-        logger.debug(f"解码后的目录: {decoded_current_dir}")
-
-        # 获取文件和文件夹（带排序参数）
-        files = get_files(decoded_current_dir, sort_by=sort_by, sort_order=sort_order)
-        folders = get_folders(decoded_current_dir, sort_by=sort_by, sort_order=sort_order)
-
-        parent_dir = None
-        if decoded_current_dir:
-            # 安全处理父目录路径
-            parent_path = Path(decoded_current_dir).parent
-            parent_dir = str(parent_path) if str(parent_path) != '.' else ''
-            # 安全编码父目录路径
-            parent_dir = urllib.parse.quote(parent_dir) if parent_dir else ''
-
-        # 加载配置
-        config = load_folder_config()
-
-        # 计算当前时间
-        current_time = int(time.time())
-
-        return render_template(
-            'index.html',
-            files=files,
-            folders=folders,
-            current_dir=current_dir,
-            parent_dir=parent_dir,
-            now=current_time,
-            show_hidden=config['show_hidden'],
-            sort_by=sort_by,
-            sort_order=sort_order,
-            urllib=urllib  # 传递urllib模块到模板
-        )
-    except Exception as e:
-        logger.error(f"主页面加载失败: {e}")
-        # 使用简化的错误页面，避免模板错误
-        return """
-        <html>
-            <head>
-                <title>错误 - 文件预览服务器</title>
-            </head>
-            <body>
-                <h1>页面加载失败</h1>
-                <p>服务器遇到错误，请稍后再试。</p>
-                <p><a href="/">返回首页</a></p>
-            </body>
-        </html>
-        """
+    """主页面 - 直接返回前端构建后的index.html文件"""
+    return send_from_directory('frontend/dist', 'index.html')
 
 
 @app.route('/files')
@@ -882,7 +825,8 @@ def vlc_redirect(filename):
     # 单个文件处理
     encoded_filename = urllib.parse.quote(decoded_filename)
     video_url = f"{base_url}/video/{encoded_filename}?token={token}"
-    # 创建VLC协议URL
+    
+    # 创建VLC协议URL，使用vlc://前缀来确保系统调用VLC播放器
     vlc_protocol_url = f"vlc://{video_url}"
     
     return render_template(
@@ -1128,6 +1072,26 @@ def serve_file(filename):
 def serve_static(path):
     """静态文件服务"""
     return send_from_directory('static', path)
+
+# 处理前端构建后的静态文件，不需要认证
+@app.route('/<path:path>')
+def serve_frontend_files(path):
+    """服务前端构建后的静态文件"""
+    # 检查请求的文件是否存在于前端构建目录
+    import os
+    frontend_dist_path = os.path.join(os.getcwd(), 'frontend', 'dist')
+    requested_file_path = os.path.join(frontend_dist_path, path)
+    
+    if os.path.exists(requested_file_path) and os.path.isfile(requested_file_path):
+        return send_from_directory('frontend/dist', path)
+    # 如果文件不存在，返回404
+    return "File not found", 404
+
+# 服务前端首页，不需要认证
+@app.route('/')
+def serve_frontend_index():
+    """服务前端首页"""
+    return send_from_directory('frontend/dist', 'index.html')
 
 
 @app.route('/toggle_config_files', methods=['POST'])
