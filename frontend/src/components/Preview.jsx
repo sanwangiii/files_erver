@@ -51,26 +51,32 @@ function Preview() {
         })
         setPreviewContent(data.content)
       } else if (params.type === 'image' || params.type === 'video') {
-        // 图片或视频文件，直接使用相对路径的文件URL
-        const fileUrl = params.type === 'video' 
-          ? `/video/${encodeURIComponent(params.path)}?token=${token}` 
-          : `/file/${encodeURIComponent(params.path)}?token=${token}`;
+        // 图片或视频文件，直接使用文件URL
+        let fileUrl = ''
+        if (params.type === 'video') {
+          // 视频文件，使用视频流URL
+          fileUrl = `/video/${encodeURIComponent(params.path)}?token=${token}`
+        } else {
+          // 图片文件，使用文件服务URL
+          fileUrl = `/file/${encodeURIComponent(params.path)}?token=${token}`
+        }
         
-        // 构建完整的HTTP URL用于VLC播放
-        const hostname = window.location.hostname;
-        const port = window.location.port;
-        const protocol = window.location.protocol;
-        
-        // 构建完整的HTTP URL
-        const fullHttpUrl = `${protocol}//${hostname}${port ? ':' + port : ''}${fileUrl}`;
-        
-        // 直接构建VLC协议URL，使用vlc://前缀来触发VLC播放器
-        const vlcProtocolUrl = `vlc://${fullHttpUrl}`;
+        // 直接生成VLC协议URL，不使用中间网页
+        let vlcProtocolUrl = null
+        if (params.type === 'video') {
+          // 使用相对路径，让浏览器自动处理主机名和端口
+          const videoUrl = `/video/${encodeURIComponent(params.path)}?token=${token}`
+          // 由于浏览器会自动处理代理，所以VLC URL需要使用完整的HTTP URL
+          const hostname = window.location.hostname
+          const backendPort = 8000
+          const fullVideoUrl = `http://${hostname}:${backendPort}/video/${encodeURIComponent(params.path)}?token=${token}`
+          vlcProtocolUrl = `vlc://${fullVideoUrl}`
+        }
         
         setPreviewFile({
           name: params.name,
           preview_url: fileUrl,
-          vlc_url: params.type === 'video' ? vlcProtocolUrl : null,
+          vlc_url: vlcProtocolUrl,
           type: params.type
         })
       }
@@ -117,10 +123,13 @@ function Preview() {
       <div className="preview-content">
         {previewLoading ? (
           <div className="preview-loading">加载中...</div>
-        ) : previewError ? (
-          <div className="preview-error">{previewError}</div>
         ) : previewFile ? (
           <>
+            {/* 显示错误信息（如果有） */}
+            {previewError && (
+              <div className="preview-error">{previewError}</div>
+            )}
+
             {/* 文本预览 */}
             {previewFile.type === 'text' && (
               <div className="text-preview-container">
@@ -153,12 +162,14 @@ function Preview() {
                   onError={() => setPreviewError('视频加载失败')}
                 />
                 <div className="video-actions">
-                  <button
+                  <a
+                    href={previewFile.vlc_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="vlc-play-btn"
-                    onClick={() => openInNewWindow(previewFile.vlc_url)}
                   >
                     <i className="fas fa-play"></i> 使用VLC播放
-                  </button>
+                  </a>
                 </div>
               </div>
             )}

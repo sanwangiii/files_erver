@@ -117,15 +117,22 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const vlcUrl = "{{ vlc_url }}";
-
-            // 尝试自动打开VLC
-            setTimeout(() => {
-                try {
-                    window.location.href = vlcUrl;
-                } catch (e) {
-                    console.error('无法自动打开VLC:', e);
-                }
-            }, 1000);
+            const manualLink = document.getElementById('manual-vlc-link');
+            const copyButton = document.getElementById('copy-link-btn');
+            const copySuccess = document.getElementById('copy-success');
+            
+            // 显示VLC URL以便用户手动复制
+            manualLink.value = vlcUrl;
+            
+            // 复制链接到剪贴板
+            copyButton.addEventListener('click', function() {
+                manualLink.select();
+                document.execCommand('copy');
+                copySuccess.style.display = 'inline-block';
+                setTimeout(() => {
+                    copySuccess.style.display = 'none';
+                }, 2000);
+            });
         });
     </script>
 </head>

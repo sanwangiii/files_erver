@@ -35,12 +35,7 @@ function FileList() {
   // 监听URL变化
   useEffect(() => {
     const handleUrlChange = () => {
-      // 如果是前端代码更新URL，不执行任何操作
-      if (isUpdatingUrl) {
-        setIsUpdatingUrl(false);
-        return;
-      }
-      
+      // 从URL查询参数中获取dir值
       const searchParams = new URLSearchParams(window.location.search);
       const dir = searchParams.get('dir') || '';
       setCurrentPath(dir);
@@ -49,15 +44,13 @@ function FileList() {
     // 初始加载时检查
     handleUrlChange();
 
-    // 监听URL变化
+    // 监听URL变化（仅当用户使用浏览器前进/后退按钮时）
     window.addEventListener('popstate', handleUrlChange);
-    window.addEventListener('hashchange', handleUrlChange);
 
     return () => {
       window.removeEventListener('popstate', handleUrlChange);
-      window.removeEventListener('hashchange', handleUrlChange);
     };
-  }, [isUpdatingUrl]);
+  }, []);
 
   // 检查用户是否有权限访问某个路径
   const hasPermission = (path, user) => {
@@ -119,15 +112,30 @@ function FileList() {
   // 加载文件和文件夹数据
   useEffect(() => {
     fetchFiles()
+    
+    // 恢复滚动位置
+    const savedScrollPosition = sessionStorage.getItem('scrollPosition')
+    if (savedScrollPosition) {
+      setTimeout(() => {
+        window.scrollTo(0, parseInt(savedScrollPosition, 10))
+        sessionStorage.removeItem('scrollPosition')
+      }, 100)
+    }
   }, [currentPath, sortBy, sortOrder])
 
   // 当路径变化时，更新URL查询参数
   useEffect(() => {
-    setIsUpdatingUrl(true); // 设置标志，表示是前端代码更新URL
-    if (currentPath) {
-      window.history.pushState(null, '', `/files?dir=${encodeURIComponent(currentPath)}`)
-    } else {
-      window.history.pushState(null, '', '/files')
+    // 检查当前URL的dir参数是否与currentPath一致
+    const searchParams = new URLSearchParams(window.location.search);
+    const currentUrlDir = searchParams.get('dir') || '';
+    
+    // 只有当URL中的dir参数与currentPath不一致时，才更新URL
+    if (currentUrlDir !== currentPath) {
+      if (currentPath) {
+        window.history.pushState(null, '', `/files?dir=${encodeURIComponent(currentPath)}`)
+      } else {
+        window.history.pushState(null, '', '/files')
+      }
     }
   }, [currentPath])
 
@@ -245,11 +253,19 @@ function FileList() {
     
     if (file.type === 'image' || file.type === 'text' || file.type === 'video') {
       // 图片、文本或视频文件，跳转到预览页面
+      // 使用传统的页面跳转方式，确保浏览器正确处理历史记录
       const searchParams = new URLSearchParams()
       searchParams.set('name', file.name)
       searchParams.set('path', encodeURIComponent(file.path)) // 编码path参数
       searchParams.set('type', file.type)
-      window.location.href = `/preview?${searchParams.toString()}`
+      const previewUrl = `/preview?${searchParams.toString()}`
+      
+      // 保存当前滚动位置
+      const scrollPosition = window.scrollY
+      sessionStorage.setItem('scrollPosition', scrollPosition.toString())
+      
+      // 使用传统的页面跳转方式
+      window.location.href = previewUrl
     } else {
       // 其他类型，显示提示信息
       setAlertType('info');
@@ -551,24 +567,207 @@ function FileList() {
               <div className="file-icon">
                 {getFileIcon(file.type)}
               </div>
-              <div className="file-name-container">
-                <span className="file-name">{file.name}</span>
-                {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
-              </div>
-              <div className="file-meta">
-                <div>大小: {formatSize(file.size)}</div>
-                <div>修改时间: {formatTime(file.modified)}</div>
-                <div>类型: {file.type}</div>
-              </div>
-              <button 
-                className="btn" 
-                onClick={() => handlePreview(file)}
-              >
-                预览
-              </button>
+              <div className="file-name">
+              <span className="file-name-text">{file.name}</span>
+              {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
             </div>
-          );
-        })}
+            <div className="file-meta">
+              <div>大小: {formatSize(file.size)}</div>
+              <div>修改时间: {formatTime(file.modified)}</div>
+              <div>类型: {file.type}</div>
+            </div>
+            <button 
+              className="btn" 
+              onClick={() => handlePreview(file)}
+            >
+              预览
+            </button>
+          </div>
+        );
+      })
+    </div>
+
+    {currentPath && (
+      <button 
+        className="btn btn-secondary" 
+        style={{ marginTop: '20px' }}
+        onClick={() => setCurrentPath('')}
+      >
+        返回根目录
+      </button>
+    )}
+  </div>
+)
+}
+
+export default FileList
+
+// 弹窗和预览模态框样式
+const customAlertStyles = `
+  /* 自定义弹窗样式 */
+  .custom-alert-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    animation: fadeIn 0.3s ease;
+  }
+  
+  .custom-alert {
+    background-color: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    min-width: 280px;
+    max-width: 90%;
+    text-align: center;
+    animation: slideUp 0.3s ease;
+  }
+  
+  /* 移动端弹窗优化 */
+  @media (max-width: 480px) {
+    .custom-alert {
+      padding: 24px 20px;
+      min-width: 260px;
+      max-width: 95%;
+    }
+  }
+  
+  .custom-alert-success {
+    border-left: 4px solid #52c41a;
+  }
+  
+  .custom-alert-error {
+    border-left: 4px solid #f5222d;
+  }
+  
+  .custom-alert-info {
+    border-left: 4px solid #1890ff;
+  }
+  
+  .custom-alert-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .custom-alert-button {
+    align-self: center;
+    min-width: 80px;
+  }
+  
+  /* 文件卡片样式优化 */
+  .file-name {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  /* 已查阅标签样式优化 */
+  .viewed-badge {
+    background-color: #52c41a;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  
+  /* 文件名称文本样式 */
+  .file-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.4;
+    flex-grow: 1;
+  }
+  
+  
+  
+  
+  /* 加载状态样式 */
+  .preview-loading {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+    font-size: 16px;
+  }
+  
+  /* 动画效果 */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* 滚动条样式 */
+  .preview-modal-content::-webkit-scrollbar,
+  .text-preview-container::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .preview-modal-content::-webkit-scrollbar-track,
+  .text-preview-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+  
+  .preview-modal-content::-webkit-scrollbar-thumb,
+  .text-preview-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+  }
+  
+  .preview-modal-content::-webkit-scrollbar-thumb:hover,
+  .text-preview-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+`;
+            <div className="file-name">
+              <span className="file-name-text">{file.name}</span>
+              {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
+            </div>
+            <div className="file-meta">
+              <div>大小: {formatSize(file.size)}</div>
+              <div>修改时间: {formatTime(file.modified)}</div>
+              <div>类型: {file.type}</div>
+            </div>
+            <button 
+              className="btn" 
+              onClick={() => handlePreview(file)}
+            >
+              预览
+            </button>
+          </div>
+        ))}
+>>>>>>> dev
       </div>
 
       {currentPath && (
@@ -646,9 +845,41 @@ const customAlertStyles = `
     min-width: 80px;
   }
   
-
+  /* 文件卡片样式优化 */
+  .file-name {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    overflow: hidden;
+    position: relative;
+  }
   
-
+  /* 已查阅标签样式优化 */
+  .viewed-badge {
+    background-color: #52c41a;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  
+  /* 文件名称文本样式 */
+  .file-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.4;
+    flex-grow: 1;
+  }
+  
+  
+  
   
   /* 文件名样式 */
   .file-name {
