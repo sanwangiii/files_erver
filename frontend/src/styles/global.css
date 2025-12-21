@@ -1475,3 +1475,61 @@ body {
   background-color: #2c3e50;
   font-weight: 500;
 }
+
+/* 用户导航样式 */
+.user-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 15px;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+  flex-wrap: wrap;
+}
+
+.user-nav button {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 15px;
+  transition: background-color 0.3s;
+}
+
+/* 响应式设计 - 平板 */
+@media (max-width: 768px) {
+  .user-nav {
+    gap: 6px;
+    margin-bottom: 12px;
+    padding: 6px 0;
+  }
+  
+  .user-nav button {
+    padding: 7px 14px;
+    font-size: 14px;
+  }
+}
+
+/* 响应式设计 - 手机 */
+@media (max-width: 480px) {
+  .user-nav {
+    gap: 4px;
+    margin-bottom: 10px;
+    padding: 4px 0;
+  }
+  
+  .user-nav button {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
+
+.user-nav button:hover {
+  background-color: #2980b9;
+}
+
+.user-nav button.active {
+  background-color: #2c3e50;
+  font-weight: 500;
+}

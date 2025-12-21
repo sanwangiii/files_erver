@@ -242,6 +242,9 @@ logger.addHandler(console_handler)
 # 用户数据存储文件路径
 USERS_FILE_PATH = Path(__file__).parent / "users.json"
 
+# 收藏数据存储文件路径
+FAVORITES_FILE_PATH = Path(__file__).parent / "favorites.json"
+
 # 加载用户数据
 def load_users():
     """从JSON文件加载用户数据"""
@@ -265,8 +268,37 @@ def save_users(users):
         logger.error(f"保存用户数据失败: {e}")
         return False
 
+# 加载收藏数据
+def load_favorites():
+    """从JSON文件加载收藏数据"""
+    try:
+        if FAVORITES_FILE_PATH.exists():
+            with open(FAVORITES_FILE_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f).get('favorites', [])
+        return []
+    except Exception as e:
+        logger.error(f"加载收藏数据失败: {e}")
+        return []
+
+# 保存收藏数据
+def save_favorites(favorites):
+    """将收藏数据保存到JSON文件"""
+    try:
+        with open(FAVORITES_FILE_PATH, 'w', encoding='utf-8') as f:
+            json.dump({'favorites': favorites}, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"保存收藏数据失败: {e}")
+        return False
+
 # 简单的认证装饰器
 from functools import wraps
+
+def get_username_from_token(token):
+    """从token中提取用户名（token格式：username-token-timestamp）"""
+    if not token or not isinstance(token, str) or '-token' not in token:
+        return None
+    return token.split('-token')[0]
 
 def require_auth(f):
     @wraps(f)
@@ -1305,6 +1337,165 @@ if __name__ == '__main__':
     print()
     print("=========================================")
     print()
+
+# API端点 - 获取用户收藏列表
+@app.route('/api/favorites', methods=['GET'])
+@require_auth
+def get_favorites():
+    """获取用户的收藏列表"""
+    try:
+        # 从Authorization头获取token
+        auth = request.headers.get('Authorization')
+        token = auth.split(' ')[1] if len(auth.split(' ')) > 1 else auth
+        username = get_username_from_token(token)
+        
+        if not username:
+            return jsonify({'error': '无效的token格式'}), 401
+        
+        # 加载收藏数据
+        favorites = load_favorites()
+        
+        # 筛选当前用户的收藏
+        user_favorites = [fav for fav in favorites if fav['username'] == username]
+        
+        return jsonify({'favorites': user_favorites})
+    except Exception as e:
+        logger.error(f"获取收藏列表失败: {e}")
+        return jsonify({'error': '获取收藏列表失败'}), 500
+
+# API端点 - 添加收藏
+@app.route('/api/favorites', methods=['POST'])
+@require_auth
+def add_favorite():
+    """添加收藏"""
+    try:
+        # 从Authorization头获取token
+        auth = request.headers.get('Authorization')
+        token = auth.split(' ')[1] if len(auth.split(' ')) > 1 else auth
+        username = get_username_from_token(token)
+        
+        if not username:
+            return jsonify({'error': '无效的token格式'}), 401
+        
+        # 获取请求数据
+        data = request.get_json()
+        file_path = data.get('path')
+        file_name = data.get('name')
+        file_type = data.get('type')
+        file_size = data.get('size')
+        modified_time = data.get('modified')
+        
+        if not file_path or not file_name:
+            return jsonify({'error': '文件路径和文件名不能为空'}), 400
+        
+        # 加载收藏数据
+        favorites = load_favorites()
+        
+        # 检查是否已存在该收藏
+        existing_fav = next((f for f in favorites if f['username'] == username and f['path'] == file_path), None)
+        if existing_fav:
+            return jsonify({'message': '该文件已在收藏列表中'}), 200
+        
+        # 创建新收藏
+        new_favorite = {
+            'id': max(f['id'] for f in favorites) + 1 if favorites else 1,
+            'username': username,
+            'path': file_path,
+            'name': file_name,
+            'type': file_type,
+            'size': file_size,
+            'modified': modified_time,
+            'created_at': int(time.time())
+        }
+        
+        # 添加到收藏列表
+        favorites.append(new_favorite)
+        
+        # 保存收藏数据
+        if save_favorites(favorites):
+            return jsonify({'favorite': new_favorite}), 201
+        else:
+            return jsonify({'error': '保存收藏失败'}), 500
+    except Exception as e:
+        logger.error(f"添加收藏失败: {e}")
+        return jsonify({'error': '添加收藏失败'}), 500
+
+# API端点 - 删除收藏
+@app.route('/api/favorites/<int:favorite_id>', methods=['DELETE'])
+@require_auth
+def delete_favorite(favorite_id):
+    """删除收藏"""
+    try:
+        # 从Authorization头获取token
+        auth = request.headers.get('Authorization')
+        token = auth.split(' ')[1] if len(auth.split(' ')) > 1 else auth
+        username = get_username_from_token(token)
+        
+        if not username:
+            return jsonify({'error': '无效的token格式'}), 401
+        
+        # 加载收藏数据
+        favorites = load_favorites()
+        
+        # 查找当前用户的指定收藏
+        favorite_index = next((i for i, f in enumerate(favorites) if f['id'] == favorite_id and f['username'] == username), None)
+        
+        if favorite_index is None:
+            return jsonify({'error': '收藏不存在或无权操作'}), 404
+        
+        # 删除收藏
+        deleted_favorite = favorites.pop(favorite_index)
+        
+        # 保存收藏数据
+        if save_favorites(favorites):
+            return jsonify({'favorite': deleted_favorite})
+        else:
+            return jsonify({'error': '删除收藏失败'}), 500
+    except Exception as e:
+        logger.error(f"删除收藏失败: {e}")
+        return jsonify({'error': '删除收藏失败'}), 500
+
+# API端点 - 删除指定文件的收藏
+@app.route('/api/favorites/delete_by_path', methods=['DELETE'])
+@require_auth
+def delete_favorite_by_path():
+    """根据文件路径删除收藏"""
+    try:
+        # 从Authorization头获取token
+        auth = request.headers.get('Authorization')
+        token = auth.split(' ')[1] if len(auth.split(' ')) > 1 else auth
+        username = get_username_from_token(token)
+        
+        if not username:
+            return jsonify({'error': '无效的token格式'}), 401
+        
+        # 获取请求数据
+        data = request.get_json()
+        file_path = data.get('path')
+        
+        if not file_path:
+            return jsonify({'error': '文件路径不能为空'}), 400
+        
+        # 加载收藏数据
+        favorites = load_favorites()
+        
+        # 查找当前用户的指定路径的收藏
+        favorite_index = next((i for i, f in enumerate(favorites) if f['path'] == file_path and f['username'] == username), None)
+        
+        if favorite_index is None:
+            return jsonify({'error': '收藏不存在或无权操作'}), 404
+        
+        # 删除收藏
+        deleted_favorite = favorites.pop(favorite_index)
+        
+        # 保存收藏数据
+        if save_favorites(favorites):
+            return jsonify({'favorite': deleted_favorite})
+        else:
+            return jsonify({'error': '删除收藏失败'}), 500
+    except Exception as e:
+        logger.error(f"根据路径删除收藏失败: {e}")
+        return jsonify({'error': '根据路径删除收藏失败'}), 500
 
     # 启动服务器
     app.run(host='0.0.0.0', port=8000, debug=False)

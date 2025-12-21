@@ -20,7 +20,7 @@ function FileList() {
   const [uploading, setUploading] = useState(false)
   const [uploadFile, setUploadFile] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
-  const { currentUser, isFileViewed, addViewedFile } = useContext(AuthContext)
+  const { currentUser, isFileViewed, addViewedFile, addFavorite, removeFavorite, isFileFavorite } = useContext(AuthContext)
   
   // 自定义弹窗状态
   const [showAlert, setShowAlert] = useState(false)
@@ -571,12 +571,26 @@ function FileList() {
               <div>修改时间: {formatTime(file.modified)}</div>
               <div>类型: {file.type}</div>
             </div>
-            <button 
-              className="btn" 
-              onClick={() => handlePreview(file)}
-            >
-              预览
-            </button>
+            <div className="file-actions">
+              <button 
+                className="btn" 
+                onClick={() => handlePreview(file)}
+              >
+                预览
+              </button>
+              <button 
+                className={`btn ${isFileFavorite(file.path) ? 'btn-danger' : 'btn-primary'}`} 
+                onClick={() => {
+                  if (isFileFavorite(file.path)) {
+                    removeFavorite(file.path)
+                  } else {
+                    addFavorite(file)
+                  }
+                }}
+              >
+                {isFileFavorite(file.path) ? '取消收藏' : '收藏'}
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -663,6 +677,17 @@ const customAlertStyles = `
     gap: 8px;
     overflow: hidden;
     position: relative;
+  }
+  
+  /* 文件操作按钮样式 */
+  .file-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  
+  .file-actions .btn {
+    flex: 1;
   }
   
   /* 已查阅标签样式优化 */
