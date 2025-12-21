@@ -1,8 +1,30 @@
-import React, { useContext } from 'react'
+import React, { useContext, useState, useEffect } from 'react'
 import { AuthContext } from '../App'
 
 function Header() {
   const { isAuthenticated, currentUser, handleLogout } = useContext(AuthContext)
+  const [currentTime, setCurrentTime] = useState(new Date())
+
+  // 实时更新时间
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [])
+
+  // 格式化时间
+  const formatTime = (date) => {
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+  }
 
   return (
     <header className="header">
@@ -12,10 +34,8 @@ function Header() {
           {isAuthenticated && (
             <nav>
               <ul className="nav-links">
-                <li>{currentUser.username}</li>
-                {currentUser.isAdmin && (
-                  <li><a href="#">管理后台</a></li>
-                )}
+                <li className="username-display">欢迎, {currentUser.username}</li>
+                <li className="time-display">{formatTime(currentTime)}</li>
                 <li>
                   <button onClick={handleLogout} className="btn btn-secondary">
                     退出登录

@@ -15,7 +15,8 @@ function Preview() {
     return {
       name: params.get('name'),
       path: decodeURIComponent(params.get('path') || ''), // 解码path参数
-      type: params.get('type')
+      type: params.get('type'),
+      from: params.get('from')
     }
   }, [])
 
@@ -100,8 +101,18 @@ function Preview() {
 
   // 返回上一页
   const goBack = () => {
-    // 使用history.back()返回上一页，保持浏览上下文
-    window.history.back()
+    const params = getUrlParams()
+    const from = params.from
+    
+    // 根据from参数决定返回的页面
+    if (from === 'favorites') {
+      // 从收藏列表预览的，直接返回收藏列表
+      // 使用history.back()无法返回到正确的视图，所以我们直接跳转到带有视图状态的URL
+      window.location.href = '/files?view=favorites'
+    } else {
+      // 默认返回文件列表
+      window.history.back()
+    }
   }
 
   // 组件挂载时加载预览
