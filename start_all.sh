@@ -59,15 +59,8 @@ echo "   mDNS访问：http://${HOSTNAME}.local:3001"
 echo "-----------------------------------------"
 echo ""
 
-# 询问用户是否继续
-echo "❓ 是否继续启动服务？(y/n)"
-read -r answer
-
-if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
-    echo ""
-    echo "已取消启动服务"
-    exit 0
-fi
+# 直接启动服务，无需用户交互
+echo "🚀 准备启动服务..."
 
 echo ""
 echo "🚀 正在启动服务..."

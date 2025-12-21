@@ -1,3 +1,13 @@
+# Application data files
+favorites.json
+files.json
+
+# Python bytecode files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
 # Dependencies
 node_modules/
 venv/

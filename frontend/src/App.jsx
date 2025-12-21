@@ -233,7 +233,7 @@ function App() {
     if (isAuthenticated && currentUser) {
       loadFavorites()
     }
-  }, [isAuthenticated, currentUser, loadFavorites])
+  }, [isAuthenticated, currentUser])
 
   // 保存已查阅文件到localStorage
   useEffect(() => {
@@ -250,12 +250,11 @@ function App() {
       addViewedFile,
       isFileViewed,
       favoriteFiles,
-      loadFavorites,
       addFavorite,
       removeFavorite,
       isFileFavorite
     };
-  }, [isAuthenticated, currentUser, handleLogin, handleLogout, addViewedFile, isFileViewed, favoriteFiles, loadFavorites, addFavorite, removeFavorite, isFileFavorite]);
+  }, [isAuthenticated, currentUser, handleLogin, handleLogout, addViewedFile, isFileViewed, favoriteFiles, addFavorite, removeFavorite, isFileFavorite]);
 
   // 添加连续点击检测逻辑
   const [clickCount, setClickCount] = useState(0)

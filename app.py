@@ -1278,66 +1278,6 @@ def upload_file():
         logger.error(f"文件上传失败: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-if __name__ == '__main__':
-    # 初始化文件夹配置文件
-    if not FOLDER_CONFIG_PATH.exists():
-        save_folder_config(load_folder_config())
-    
-    # 获取本机IP地址的更可靠方法
-    import socket
-    import subprocess
-    
-    hostname = socket.gethostname()
-    
-    # 尝试获取局域网IP地址的多种方法
-    ip_address = None
-    
-    # 方法1: 使用UDP套接字连接外部服务器获取当前网络接口IP
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 80))
-        ip_address = s.getsockname()[0]
-        s.close()
-    except Exception:
-        pass
-    
-    # 方法2: 如果方法1失败，尝试使用ifconfig命令获取IP地址
-    if not ip_address:
-        try:
-            result = subprocess.run(['ifconfig'], capture_output=True, text=True)
-            import re
-            ip_matches = re.findall(r'inet\s+(\d+\.\d+\.\d+\.\d+)\s+netmask', result.stdout)
-            for ip in ip_matches:
-                if not ip.startswith('127.'):
-                    ip_address = ip
-                    break
-        except Exception:
-            pass
-    
-    # 方法3: 如果以上方法都失败，使用传统方法
-    if not ip_address:
-        ip_address = socket.gethostbyname(hostname)
-    
-    # 显示启动信息和所有可访问地址
-    print("=========================================")
-    print("文件预览服务器正在运行...")
-    print("=========================================")
-    print(f"📁 文件目录: {MOBILE_HDD_PATH}")
-    print()
-    print("📱 可访问地址列表：")
-    print(f"   本地访问：http://localhost:8000")
-    print(f"   局域网访问：http://{ip_address}:8000")
-    print(f"   mDNS访问：http://{hostname}.local:8000")
-    print()
-    print("🔗 前端访问地址：")
-    print(f"   本地访问：http://localhost:3001")
-    print(f"   局域网访问：http://{ip_address}:3001")
-    print(f"   mDNS访问：http://{hostname}.local:3001")
-    print()
-    print("=========================================")
-    print()
-
 # API端点 - 获取用户收藏列表
 @app.route('/api/favorites', methods=['GET'])
 @require_auth
@@ -1497,5 +1437,66 @@ def delete_favorite_by_path():
         logger.error(f"根据路径删除收藏失败: {e}")
         return jsonify({'error': '根据路径删除收藏失败'}), 500
 
-    # 启动服务器
+
+if __name__ == '__main__':
+    # 初始化文件夹配置文件
+    if not FOLDER_CONFIG_PATH.exists():
+        save_folder_config(load_folder_config())
+    
+    # 获取本机IP地址的更可靠方法
+    import socket
+    import subprocess
+    
+    hostname = socket.gethostname()
+    
+    # 尝试获取局域网IP地址的多种方法
+    ip_address = None
+    
+    # 方法1: 使用UDP套接字连接外部服务器获取当前网络接口IP
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip_address = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pass
+    
+    # 方法2: 如果方法1失败，尝试使用ifconfig命令获取IP地址
+    if not ip_address:
+        try:
+            result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+            import re
+            ip_matches = re.findall(r'inet\s+(\d+\.\d+\.\d+\.\d+)\s+netmask', result.stdout)
+            for ip in ip_matches:
+                if not ip.startswith('127.'):
+                    ip_address = ip
+                    break
+        except Exception:
+            pass
+    
+    # 方法3: 如果以上方法都失败，使用传统方法
+    if not ip_address:
+        ip_address = socket.gethostbyname(hostname)
+    
+    # 显示启动信息和所有可访问地址
+    print("=========================================")
+    print("文件预览服务器正在运行...")
+    print("=========================================")
+    print(f"📁 文件目录: {MOBILE_HDD_PATH}")
+    print()
+    print("📱 可访问地址列表：")
+    print(f"   本地访问：http://localhost:8000")
+    print(f"   局域网访问：http://{ip_address}:8000")
+    print(f"   mDNS访问：http://{hostname}.local:8000")
+    print()
+    print("🔗 前端访问地址：")
+    print(f"   本地访问：http://localhost:3001")
+    print(f"   局域网访问：http://{ip_address}:3001")
+    print(f"   mDNS访问：http://{hostname}.local:3001")
+    print()
+    print("=========================================")
+    print()
+    
+    # 启动Flask应用服务器
     app.run(host='0.0.0.0', port=8000, debug=False)
+

@@ -1,33 +1,36 @@
-import React, { useState, useEffect, useContext, useRef } from 'react'
-import { AuthContext } from '../App'
+import React, { useState, useEffect, useRef, useContext } from 'react';
+// import axios from 'axios'; // 移除未使用的库导入
+// import { useNavigate } from 'react-router-dom'; // 移除未使用的库导入
+import { AuthContext } from '../App';
+// import "./FileList.css"; // 移除不存在的CSS文件导入
+import '../styles/global.css';
 
-function FileList() {
-
-  // 基础URL使用空字符串，这样会使用相对路径，从而利用Vite的代理配置
-  const BASE_URL = '';
-  
-  // 状态管理
-  const [files, setFiles] = useState([])
-  const [folders, setFolders] = useState([])
+const FileList = () => {
+  const { isAuthenticated, currentUser, addViewedFile, isFileViewed, addFavorite, removeFavorite, isFileFavorite } = useContext(AuthContext);
+  const [files, setFiles] = useState([]);
+  const [folders, setFolders] = useState([]);
   const [currentPath, setCurrentPath] = useState(() => {
     // 从URL查询参数中获取初始路径
     const searchParams = new URLSearchParams(window.location.search);
     return searchParams.get('dir') || '';
-  })
-  const [sortBy, setSortBy] = useState('name')
-  const [sortOrder, setSortOrder] = useState('asc')
-  const [loading, setLoading] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [uploadFile, setUploadFile] = useState(null)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const { currentUser, isFileViewed, addViewedFile, addFavorite, removeFavorite, isFileFavorite } = useContext(AuthContext)
+  });
+  const [sortBy, setSortBy] = useState('name');
+  const [sortOrder, setSortOrder] = useState('asc');
+  const [loading, setLoading] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertType, setAlertType] = useState('success');
+  const [showAlert, setShowAlert] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // 基础URL使用空字符串，这样会使用相对路径，从而利用Vite的代理配置
+  const BASE_URL = '';
   
-  // 自定义弹窗状态
-  const [showAlert, setShowAlert] = useState(false)
-  const [alertMessage, setAlertMessage] = useState('')
-  const [alertType, setAlertType] = useState('success') // success, error, info
-
-
+  // 上传相关状态
+  const [uploading, setUploading] = useState(false);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // 添加一个标志来避免无限循环
   const [isUpdatingUrl, setIsUpdatingUrl] = useState(false);
@@ -159,43 +162,48 @@ function FileList() {
   // 格式化文件大小
   const formatSize = (sizeBytes) => {
     if (sizeBytes >= 1024 ** 3) {
-      return `${(sizeBytes / (1024 ** 3)).toFixed(1)} GB`
+      return `${(sizeBytes / (1024 ** 3)).toFixed(1)} GB`;
     } else if (sizeBytes >= 1024 ** 2) {
-      return `${(sizeBytes / (1024 ** 2)).toFixed(1)} MB`
+      return `${(sizeBytes / (1024 ** 2)).toFixed(1)} MB`;
     } else if (sizeBytes >= 1024) {
-      return `${(sizeBytes / 1024).toFixed(1)} KB`
+      return `${(sizeBytes / 1024).toFixed(1)} KB`;
     } else {
-      return `${sizeBytes} B`
+      return `${sizeBytes} B`;
     }
-  }
+  };
 
   // 格式化修改时间
   const formatTime = (timestamp) => {
-    const date = new Date(timestamp)
-    return date.toLocaleString()
-  }
+    const date = new Date(timestamp);
+    return date.toLocaleString();
+  };
 
   // 获取文件图标
   const getFileIcon = (fileType) => {
     switch (fileType) {
       case 'video':
-        return <i className="fa-solid fa-video" style={{ color: '#e74c3c' }}></i>
+        return <i className="fa-solid fa-video" style={{ color: '#e74c3c' }}></i>;
       case 'text':
-        return <i className="fa-solid fa-file-lines" style={{ color: '#3498db' }}></i>
+        return <i className="fa-solid fa-file-lines" style={{ color: '#3498db' }}></i>;
       case 'image':
-        return <i className="fa-solid fa-image" style={{ color: '#27ae60' }}></i>
+        return <i className="fa-solid fa-image" style={{ color: '#27ae60' }}></i>;
       default:
-        return <i className="fa-solid fa-file" style={{ color: '#95a5a6' }}></i>
+        return <i className="fa-solid fa-file" style={{ color: '#95a5a6' }}></i>;
     }
-  }
+  };
 
   // 处理排序
   const handleSort = (newSortBy) => {
+    // console.log('Original handleSort called with newSortBy:', newSortBy);
+    // console.log('Current sortBy:', sortBy, 'Current sortOrder:', sortOrder);
     if (sortBy === newSortBy) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+      // const newSortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+      // console.log('Changing sortOrder to:', newSortOrder);
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
-      setSortBy(newSortBy)
-      setSortOrder('asc')
+      // console.log('Changing sortBy to:', newSortBy, 'and sortOrder to: asc');
+      setSortBy(newSortBy);
+      setSortOrder('asc');
     }
   }
 
@@ -451,35 +459,92 @@ function FileList() {
     setShowAlert(false);
   };
 
+  // 回到顶部处理函数
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
+
+  // 监听滚动事件，控制回到顶部按钮的显示
+  useEffect(() => {
+    const handleScroll = () => {
+      // 当滚动距离超过500px时显示回到顶部按钮
+      setShowBackToTop(window.scrollY > 500);
+    };
+
+    // 添加滚动事件监听器
+    window.addEventListener('scroll', handleScroll);
+
+    // 清理事件监听器
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // 下拉菜单点击外部关闭
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // 切换下拉菜单显示
+  const toggleDropdown = () => {
+    // console.log('toggleDropdown called, current showDropdown:', showDropdown);
+    setShowDropdown(!showDropdown);
+  };
+
+  // 处理排序项点击，点击后关闭下拉菜单
+  const handleSortItemClick = (newSortBy) => {
+    // console.log('handleSortItemClick called with newSortBy:', newSortBy);
+    handleSort(newSortBy);
+    setShowDropdown(false);
+  };
+
   return (
     <div className="file-list-container">
       {loading && <div className="loading">加载中...</div>}
       <div className="sort-controls">
         <div className="sort-options">
-          <button 
-            className={`sort-option ${sortBy === 'name' ? 'active' : ''}`}
-            onClick={() => handleSort('name')}
-          >
-            名称 {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
-          </button>
-          <button 
-            className={`sort-option ${sortBy === 'modified' ? 'active' : ''}`}
-            onClick={() => handleSort('modified')}
-          >
-            修改时间 {sortBy === 'modified' && (sortOrder === 'asc' ? '↑' : '↓')}
-          </button>
-          <button 
-            className={`sort-option ${sortBy === 'size' ? 'active' : ''}`}
-            onClick={() => handleSort('size')}
-          >
-            大小 {sortBy === 'size' && (sortOrder === 'asc' ? '↑' : '↓')}
-          </button>
-          <button 
-            className={`sort-option ${sortBy === 'type' ? 'active' : ''}`}
-            onClick={() => handleSort('type')}
-          >
-            类型 {sortBy === 'type' && (sortOrder === 'asc' ? '↑' : '↓')}
-          </button>
+          <div className="sort-dropdown" ref={dropdownRef}>
+            <button className="sort-dropdown-btn" onClick={toggleDropdown}>
+              排序方式: {sortBy === 'name' ? '名称' : sortBy === 'modified' ? '修改时间' : sortBy === 'size' ? '大小' : '类型'} {sortOrder === 'asc' ? '↑' : '↓'}
+              <i className="fa-solid fa-chevron-down"></i>
+            </button>
+            <div className={`sort-dropdown-content ${showDropdown ? 'show' : ''}`}>
+              <button 
+                className={`sort-dropdown-item ${sortBy === 'name' ? 'active' : ''}`}
+                onClick={() => handleSortItemClick('name')}
+              >
+                名称 {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </button>
+              <button 
+                className={`sort-dropdown-item ${sortBy === 'modified' ? 'active' : ''}`}
+                onClick={() => handleSortItemClick('modified')}
+              >
+                修改时间 {sortBy === 'modified' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </button>
+              <button 
+                className={`sort-dropdown-item ${sortBy === 'size' ? 'active' : ''}`}
+                onClick={() => handleSortItemClick('size')}
+              >
+                大小 {sortBy === 'size' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </button>
+              <button 
+                className={`sort-dropdown-item ${sortBy === 'type' ? 'active' : ''}`}
+                onClick={() => handleSortItemClick('type')}
+              >
+                类型 {sortBy === 'type' && (sortOrder === 'asc' ? '↑' : '↓')}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -618,6 +683,16 @@ function FileList() {
           返回根目录
         </button>
       )}
+
+      {/* 回到顶部按钮 */}
+      <button 
+        className={`back-to-top-btn ${showBackToTop ? 'show' : ''}`}
+        onClick={scrollToTop}
+        title="回到顶部"
+        style={{ display: showBackToTop ? 'flex' : 'none' }}
+      >
+        <i className="fa-solid fa-arrow-up"></i>
+      </button>
     </div>
   )
 }
@@ -781,6 +856,82 @@ const customAlertStyles = `
   .preview-modal-content::-webkit-scrollbar-thumb:hover,
   .text-preview-container::-webkit-scrollbar-thumb:hover {
     background: #555;
+  }
+  
+  /* 回到顶部按钮样式 */
+  .back-to-top-btn {
+    position: fixed;
+    bottom: 40px;
+    right: 40px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background-color: #4a6fa5;
+    color: white;
+    border: none;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+    font-size: 24px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(20px);
+  }
+  
+  .back-to-top-btn:hover {
+    background-color: #3a5a85;
+    transform: translateY(-5px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+  
+  .back-to-top-btn:active {
+    transform: translateY(-2px);
+  }
+  
+  /* 按钮显示时的动画 */
+  .back-to-top-btn.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+  
+  /* 平板设备适配 (768px - 1024px) */
+  @media (max-width: 1024px) {
+    .back-to-top-btn {
+      bottom: 30px;
+      right: 30px;
+      width: 52px;
+      height: 52px;
+      font-size: 22px;
+    }
+  }
+  
+  /* 移动端适配 (<= 768px) */
+  @media (max-width: 768px) {
+    .back-to-top-btn {
+      bottom: 24px;
+      right: 24px;
+      width: 48px;
+      height: 48px;
+      font-size: 20px;
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
+    }
+  }
+  
+  /* 小屏手机适配 (<= 480px) */
+  @media (max-width: 480px) {
+    .back-to-top-btn {
+      bottom: 20px;
+      right: 20px;
+      width: 44px;
+      height: 44px;
+      font-size: 18px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+    }
   }
 `;
 
