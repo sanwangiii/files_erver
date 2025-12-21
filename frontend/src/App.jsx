@@ -257,6 +257,40 @@ function App() {
     };
   }, [isAuthenticated, currentUser, handleLogin, handleLogout, addViewedFile, isFileViewed, favoriteFiles, loadFavorites, addFavorite, removeFavorite, isFileFavorite]);
 
+  // 添加连续点击检测逻辑
+  const [clickCount, setClickCount] = useState(0)
+  const [lastClickTime, setLastClickTime] = useState(0)
+  const [showAdminButton, setShowAdminButton] = useState(false)
+
+  // 处理文件列表按钮点击
+  const handleFileListClick = () => {
+    const now = Date.now()
+    const timeDiff = now - lastClickTime
+    
+    // 重置点击计数如果超过2秒
+    if (timeDiff > 2000) {
+      setClickCount(1)
+    } else {
+      setClickCount(prev => prev + 1)
+    }
+    
+    setLastClickTime(now)
+    
+    // 连续点击5次，显示或切换到用户管理
+    if (clickCount + 1 === 5) {
+      setShowAdminButton(true)
+      // 直接切换到用户管理
+      setAdminView('admin')
+      // 重置点击计数
+      setClickCount(0)
+    } else {
+      // 正常点击，切换到文件列表并隐藏用户管理按钮
+      setAdminView('fileList')
+      // 返回文件列表时，默认继续隐藏用户管理
+      setShowAdminButton(false)
+    }
+  }
+
   // 路由处理
   const getCurrentComponent = () => {
     const path = window.location.pathname
@@ -276,16 +310,18 @@ function App() {
           <div className="admin-nav">
             <button 
               className={adminView === 'fileList' ? 'active' : ''}
-              onClick={() => setAdminView('fileList')}
+              onClick={handleFileListClick}
             >
               文件列表
             </button>
-            <button 
-              className={adminView === 'admin' ? 'active' : ''}
-              onClick={() => setAdminView('admin')}
-            >
-              用户管理
-            </button>
+            {showAdminButton && (
+              <button 
+                className={adminView === 'admin' ? 'active' : ''}
+                onClick={() => setAdminView('admin')}
+              >
+                用户管理
+              </button>
+            )}
             <button 
               className={adminView === 'favorites' ? 'active' : ''}
               onClick={() => setAdminView('favorites')}

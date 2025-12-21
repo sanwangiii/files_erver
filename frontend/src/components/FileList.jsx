@@ -52,6 +52,20 @@ function FileList() {
     };
   }, []);
 
+  // 加载状态对body元素的影响，实现加载期间页面无法操作
+  useEffect(() => {
+    if (loading) {
+      document.body.classList.add('loading-active');
+    } else {
+      document.body.classList.remove('loading-active');
+    }
+    
+    return () => {
+      // 组件卸载时确保移除类
+      document.body.classList.remove('loading-active');
+    };
+  }, [loading]);
+
   // 检查用户是否有权限访问某个路径
   const hasPermission = (path, user) => {
     if (!user || user.isAdmin) return true;

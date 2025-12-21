@@ -156,9 +156,21 @@ function Admin() {
       // 准备要更新的数据
       const updateData = { ...editingUser }
       
-      // 如果密码被修改，哈希新密码
-      if (updateData.password && updateData.password.length < 32) { // 假设md5哈希是32位
-        updateData.password = md5(updateData.password)
+      // 检查原始用户数据，只在密码被修改时才更新密码
+      const originalUser = users.find(user => user.id === editingUser.id)
+      
+      // 如果密码为空，不更新密码
+      if (updateData.password === '') {
+        // 删除密码字段，不更新密码
+        delete updateData.password
+      } else if (updateData.password !== originalUser.password) {
+        // 密码被修改，哈希新密码
+        if (updateData.password.length < 32) { // 假设md5哈希是32位
+          updateData.password = md5(updateData.password)
+        }
+      } else {
+        // 密码未修改，不更新密码
+        delete updateData.password
       }
       
       const response = await fetch(`/api/users/${editingUser.id}`, {
@@ -402,13 +414,12 @@ function Admin() {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="edit-password">密码</label>
+              <label htmlFor="edit-password">密码（不填则保持原密码）</label>
               <input
                 type="password"
                 id="edit-password"
-                value={editingUser.password}
+                value={editingUser.password || ''}
                 onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
-                required
               />
             </div>
             <div className="form-group">
