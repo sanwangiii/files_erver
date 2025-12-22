@@ -138,6 +138,27 @@ body {
   border: 1px solid #f0f0f0;
 }
 
+/* 文件卡片操作按钮样式 - PC端 */
+.file-card .file-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 0;
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: center;
+}
+
+.file-card .file-actions .btn {
+  padding: 8px 12px;
+  font-size: 14px;
+  min-height: 36px;
+  border-radius: 8px;
+  flex: 1;
+  min-width: 45%;
+  box-sizing: border-box;
+}
+
 /* 响应式设计 - 平板 */
 @media (max-width: 768px) {
   .file-list {
@@ -161,8 +182,12 @@ body {
   }
   
   .file-card {
-    padding: 12px;
-    min-height: 130px;
+    padding: 15px 12px;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-sizing: border-box;
   }
   
   /* 优化移动端文件卡片的触摸区域 */
@@ -174,6 +199,25 @@ body {
   /* 确保卡片内图标和文字有足够的间距 */
   .file-card .file-icon {
     margin-bottom: 10px;
+  }
+  
+  /* 优化文件元数据区域与按钮区域的间距 */
+  .file-card .file-meta {
+    margin-bottom: 12px;
+    font-size: 12px;
+  }
+  
+  /* 优化移动端文件卡片按钮样式 */
+  .file-card .file-actions {
+    gap: 6px;
+    margin-top: 8px;
+  }
+  
+  .file-card .file-actions .btn {
+    padding: 6px 8px;
+    font-size: 12px;
+    min-height: 32px;
+    border-radius: 6px;
   }
 }
 
@@ -198,6 +242,7 @@ body {
   transform: scale(1.1);
 }
 
+/* 文件名样式，确保有足够空间显示 */
 .file-name {
   font-weight: 500;
   margin-bottom: 5px;
@@ -209,6 +254,43 @@ body {
   padding: 0 5px;
   font-size: 14px;
   line-height: 1.4;
+}
+
+/* 文件名容器样式，使用flex布局确保文件名和已阅标签正确排列 */
+.file-name-container {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  vertical-align: top;
+  overflow: hidden;
+}
+
+/* 文件名文本样式，确保它能占满剩余空间并正确截断 */
+.file-name-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* 已阅标签样式，确保它与文件名在同一行 */
+.viewed-badge {
+  background-color: #2ecc71;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  margin-left: 5px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: top;
+  line-height: 1.4;
+  height: 18px;
 }
 
 .file-meta {
@@ -264,9 +346,32 @@ body {
   gap: 8px;
   align-items: center;
   position: relative;
-  width: 100%;
-  max-width: 100%;
-  padding: 0 10px;
+  /* 移除固定宽度，让上传区域根据内容自适应 */
+  width: auto;
+  max-width: none;
+  padding: 0;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .upload-section {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .upload-section {
+    gap: 6px;
+  }
+  
+  .upload-progress-container {
+    max-width: 180px;
+  }
+  
+  .upload-progress-text {
+    font-size: 12px;
+    min-width: 40px;
+  }
 }
 
 .upload-progress-container {
@@ -349,17 +454,19 @@ body {
 /* 响应式设计 - 手机 */
 @media (max-width: 480px) {
   .btn {
-    padding: 12px 20px;
-    font-size: 14px;
-    min-height: 44px;
-    width: 100%;
-    max-width: 300px;
+    padding: 10px 16px;
+    font-size: 13px;
+    min-height: 40px;
+    /* 移除width: 100%，让按钮根据内容自适应宽度 */
+    width: auto;
+    max-width: none;
   }
   
   /* 确保按钮在移动端有足够的触摸区域 */
   .btn {
     cursor: pointer;
     touch-action: manipulation;
+    min-width: 80px;
   }
 }
 
@@ -517,6 +624,62 @@ body {
   border-radius: 4px;
   font-size: 16px;
   min-height: 40px;
+}
+
+/* 回到顶部按钮的样式 */
+.back-to-top-btn {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: #5d8bc5;
+  color: white;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.back-to-top-btn.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+.back-to-top-btn:hover {
+  background-color: #4d7bc5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .back-to-top-btn {
+    bottom: 20px;
+    right: 20px;
+    width: 45px;
+    height: 45px;
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .back-to-top-btn {
+    bottom: 15px;
+    right: 15px;
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
 }
 
 /* 统一所有表单内复选框的样式 */
@@ -815,12 +978,43 @@ body {
   transform: translateY(-2px);
 }
 
+/* 文件名容器样式，使用flex布局确保文件名和已阅标签正确排列 */
+.file-name-container {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  vertical-align: top;
+  overflow: hidden;
+}
+
+/* 文件名文本样式，确保它能占满剩余空间并正确截断 */
+.file-name-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* 已阅标签样式，确保它与文件名在同一行 */
 .viewed-badge {
   background-color: #2ecc71;
   color: white;
   padding: 2px 6px;
   border-radius: 10px;
   font-size: 12px;
+  margin-left: 5px;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: top;
+  line-height: 1.4;
+}
+
+/* 当有已阅标签时，为文件名文本留出空间 */
+.file-name-text + .viewed-badge {
   margin-left: 5px;
 }
 
@@ -1372,7 +1566,7 @@ body {
   
   .folder-card {
     padding: 15px;
-    min-height: 140px;
+    min-height: 130px;
   }
 }
 
@@ -1481,9 +1675,13 @@ body {
     }
     
     /* 在移动端允许文件名和文件夹名显示两行 */
+    .file-grid .file-name-container,
     .file-grid .file-name,
+    .file-grid .file-name-text,
     .folder-grid .folder-name,
-    .file-list .file-name {
+    .file-list .file-name-container,
+    .file-list .file-name,
+    .file-list .file-name-text {
       white-space: normal;
       overflow: hidden;
       display: -webkit-box;
@@ -1518,7 +1716,7 @@ body {
 /* 导航栏样式 */
 .navigation {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: 15px;
   margin-top: 15px;
@@ -1541,6 +1739,16 @@ body {
     gap: 8px;
     margin-top: 10px;
     margin-bottom: 10px;
+    justify-content: center;
+  }
+  
+  /* 调整当前路径显示 */
+  .current-path {
+    font-size: 12px;
+    padding: 4px 8px;
+    margin-top: 8px;
+    flex-basis: 100%;
+    text-align: center;
   }
 }
 

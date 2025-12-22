@@ -28,9 +28,9 @@ const FileList = () => {
   const BASE_URL = '';
   
   // 上传相关状态
-  const [uploading, setUploading] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState([]);
   const [uploadFile, setUploadFile] = useState(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  // const [uploadProgress, setUploadProgress] = useState(0);
 
   // 添加一个标志来避免无限循环
   const [isUpdatingUrl, setIsUpdatingUrl] = useState(false);
@@ -372,8 +372,17 @@ const FileList = () => {
     
     console.log('开始上传文件:', fileToUpload.name, '大小:', fileToUpload.size);
     
-    setUploading(true);
-    setUploadProgress(0);
+    // 为当前文件创建唯一ID
+    const fileId = Date.now() + Math.random().toString(36).substr(2, 9);
+    
+    // 将文件添加到上传列表
+    setUploadingFiles(prev => [...prev, {
+      id: fileId,
+      name: fileToUpload.name,
+      progress: 0,
+      uploading: true,
+      error: null
+    }]);
     
     const formData = new FormData();
     formData.append('file', fileToUpload);
@@ -391,7 +400,11 @@ const FileList = () => {
       if (event.lengthComputable) {
         const progress = Math.round((event.loaded / event.total) * 100);
         console.log('上传进度百分比:', progress);
-        setUploadProgress(progress);
+        
+        // 更新该文件的进度
+        setUploadingFiles(prev => prev.map(file => 
+          file.id === fileId ? { ...file, progress } : file
+        ));
       }
     });
     
@@ -400,48 +413,79 @@ const FileList = () => {
       console.log('上传完成，状态码:', xhr.status);
       console.log('上传响应:', xhr.responseText);
       if (xhr.status === 200) {
-        // 上传成功，重新加载文件列表
-        // 显示自定义成功弹窗
-        setAlertMessage('文件上传成功！');
-        setAlertType('success');
-        setShowAlert(true);
-        fetchFiles();
-        setUploadProgress(0);
+        // 更新文件上传状态为完成
+        setUploadingFiles(prev => prev.map(file => 
+          file.id === fileId ? { ...file, uploading: false } : file
+        ));
+        
+        // 检查是否所有文件都上传完成
+        setTimeout(() => {
+          setUploadingFiles(prev => {
+            const remainingUploads = prev.filter(file => file.id !== fileId);
+            if (remainingUploads.length === 0) {
+              // 最后一个文件上传完成，重新加载文件列表
+              fetchFiles();
+              
+              // 显示成功消息
+              setAlertMessage('所有文件上传成功！');
+              setAlertType('success');
+              setShowAlert(true);
+            }
+            return remainingUploads;
+          });
+        }, 100);
       } else {
+        let errorMessage;
         try {
           const error = JSON.parse(xhr.responseText);
           console.error('上传失败:', error);
-          setAlertMessage('文件上传失败: ' + (error.message || '未知错误'));
-          setAlertType('error');
-          setShowAlert(true);
+          errorMessage = error.message || '未知错误';
         } catch (e) {
           console.error('上传失败:', xhr.responseText);
-          setAlertMessage('文件上传失败: ' + xhr.responseText);
-          setAlertType('error');
-          setShowAlert(true);
+          errorMessage = xhr.responseText;
         }
+        
+        // 更新文件上传状态为错误
+        setUploadingFiles(prev => prev.map(file => 
+          file.id === fileId ? { ...file, uploading: false, error: errorMessage } : file
+        ));
+        
+        // 显示错误消息
+        setAlertMessage(`文件上传失败: ${fileToUpload.name} - ${errorMessage}`);
+        setAlertType('error');
+        setShowAlert(true);
       }
-      setUploading(false);
     });
     
     // 监听错误事件
     xhr.addEventListener('error', () => {
       console.error('上传出错:', xhr.responseText);
-      setAlertMessage('文件上传出错: ' + (xhr.responseText || '网络错误'));
+      const errorMessage = xhr.responseText || '网络错误';
+      
+      // 更新文件上传状态为错误
+      setUploadingFiles(prev => prev.map(file => 
+        file.id === fileId ? { ...file, uploading: false, error: errorMessage } : file
+      ));
+      
+      // 显示错误消息
+      setAlertMessage(`文件上传出错: ${fileToUpload.name} - ${errorMessage}`);
       setAlertType('error');
       setShowAlert(true);
-      setUploading(false);
-      setUploadProgress(0);
     });
     
     // 监听超时事件
     xhr.addEventListener('timeout', () => {
       console.error('上传超时');
-      setAlertMessage('文件上传超时: 请检查网络连接或尝试上传较小的文件');
+      
+      // 更新文件上传状态为错误
+      setUploadingFiles(prev => prev.map(file => 
+        file.id === fileId ? { ...file, uploading: false, error: '上传超时' } : file
+      ));
+      
+      // 显示错误消息
+      setAlertMessage(`文件上传超时: ${fileToUpload.name}`);
       setAlertType('error');
       setShowAlert(true);
-      setUploading(false);
-      setUploadProgress(0);
     });
     
     // 设置超时时间为30秒
@@ -451,7 +495,7 @@ const FileList = () => {
     console.log('发送上传请求到:', '/api/upload');
     xhr.open('POST', '/api/upload', true);
     xhr.setRequestHeader('Authorization', `Bearer ${user?.token || ''}`);
-      xhr.send(formData);
+    xhr.send(formData);
   }
 
   // 关闭自定义弹窗
@@ -470,8 +514,9 @@ const FileList = () => {
   // 监听滚动事件，控制回到顶部按钮的显示
   useEffect(() => {
     const handleScroll = () => {
-      // 当滚动距离超过500px时显示回到顶部按钮
-      setShowBackToTop(window.scrollY > 500);
+      // 使用document.documentElement.scrollTop || document.body.scrollTop来兼容不同浏览器
+      const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop;
+      setShowBackToTop(scrollY > 500);
     };
 
     // 添加滚动事件监听器
@@ -566,22 +611,22 @@ const FileList = () => {
               accept="image/*,video/*"
               multiple
             />
-            <label htmlFor="file-upload" className="btn btn-primary" disabled={uploading}>
-              {uploading ? '上传中...' : '上传文件'}
+            <label htmlFor="file-upload" className="btn btn-primary" disabled={uploadingFiles.length > 0}>
+              {uploadingFiles.length > 0 ? '上传中...' : '上传文件'}
             </label>
             
-            {/* 上传进度条 */}
-            {uploading && (
-              <div className="upload-progress-container">
+            {/* 上传进度条 - 为每个文件显示 */}
+            {uploadingFiles.map(file => (
+              <div key={file.id} className="upload-progress-container">
                 <div className="upload-progress-bar">
                   <div 
                     className="upload-progress-fill" 
-                    style={{ width: `${uploadProgress}%` }}
+                    style={{ width: `${file.progress}%` }}
                   ></div>
                 </div>
-                <span className="upload-progress-text">{uploadProgress}%</span>
+                <span className="upload-progress-text">{file.name} {file.progress}%</span>
               </div>
-            )}
+            ))}
             
             {/* 自定义居中弹窗 */}
             {showAlert && (
@@ -601,13 +646,11 @@ const FileList = () => {
             )}
           </div>
         )}
-        
-
+      </div>
         
         <div className="current-path">
           当前路径: {currentPath ? currentPath : '根目录'}
         </div>
-      </div>
 
       {folders.length > 0 && (
         <div className="folder-grid">
@@ -634,7 +677,7 @@ const FileList = () => {
         </div>
       )}
 
-      <h2>文件</h2>
+      {sortedFiles.length > 0 && <h2>文件</h2>}
       <div className="file-grid">
         {sortedFiles.map(file => (
           <div key={file.path} className="file-card">
@@ -642,8 +685,10 @@ const FileList = () => {
               {getFileIcon(file.type)}
             </div>
             <div className="file-name">
-              <span className="file-name-text">{file.name}</span>
-              {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
+              <div className="file-name-container">
+                <span className="file-name-text">{file.name}</span>
+                {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
+              </div>
             </div>
             <div className="file-meta">
               <div>大小: {formatSize(file.size)}</div>
@@ -689,7 +734,6 @@ const FileList = () => {
         className={`back-to-top-btn ${showBackToTop ? 'show' : ''}`}
         onClick={scrollToTop}
         title="回到顶部"
-        style={{ display: showBackToTop ? 'flex' : 'none' }}
       >
         <i className="fa-solid fa-arrow-up"></i>
       </button>
@@ -698,246 +742,3 @@ const FileList = () => {
 }
 
 export default FileList
-
-// 弹窗和预览模态框样式
-const customAlertStyles = `
-  /* 自定义弹窗样式 */
-  .custom-alert-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-    animation: fadeIn 0.3s ease;
-  }
-  
-  .custom-alert {
-    background-color: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-    min-width: 280px;
-    max-width: 90%;
-    text-align: center;
-    animation: slideUp 0.3s ease;
-  }
-  
-  /* 移动端弹窗优化 */
-  @media (max-width: 480px) {
-    .custom-alert {
-      padding: 24px 20px;
-      min-width: 260px;
-      max-width: 95%;
-    }
-  }
-  
-  .custom-alert-success {
-    border-left: 4px solid #52c41a;
-  }
-  
-  .custom-alert-error {
-    border-left: 4px solid #f5222d;
-  }
-  
-  .custom-alert-info {
-    border-left: 4px solid #1890ff;
-  }
-  
-  .custom-alert-content {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  
-  .custom-alert-button {
-    align-self: center;
-    min-width: 80px;
-  }
-  
-  /* 文件卡片样式优化 */
-  .file-name {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    overflow: hidden;
-    position: relative;
-  }
-  
-  /* 文件操作按钮样式 */
-  .file-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 10px;
-  }
-  
-  .file-actions .btn {
-    flex: 1;
-  }
-  
-  /* 已查阅标签样式优化 */
-  .viewed-badge {
-    background-color: #52c41a;
-    color: white;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 12px;
-    font-weight: bold;
-    white-space: nowrap;
-    flex-shrink: 0;
-    align-self: center;
-  }
-  
-  /* 文件名称文本样式 */
-  .file-name-text {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    line-height: 1.4;
-    flex-grow: 1;
-  }
-  
-  
-  
-  
-  /* 加载状态样式 */
-  .preview-loading {
-    text-align: center;
-    padding: 40px;
-    color: #666;
-    font-size: 16px;
-  }
-  
-  /* 动画效果 */
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-  
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(30px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  /* 滚动条样式 */
-  .preview-modal-content::-webkit-scrollbar,
-  .text-preview-container::-webkit-scrollbar {
-    width: 8px;
-  }
-  
-  .preview-modal-content::-webkit-scrollbar-track,
-  .text-preview-container::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 4px;
-  }
-  
-  .preview-modal-content::-webkit-scrollbar-thumb,
-  .text-preview-container::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 4px;
-  }
-  
-  .preview-modal-content::-webkit-scrollbar-thumb:hover,
-  .text-preview-container::-webkit-scrollbar-thumb:hover {
-    background: #555;
-  }
-  
-  /* 回到顶部按钮样式 */
-  .back-to-top-btn {
-    position: fixed;
-    bottom: 40px;
-    right: 40px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background-color: #4a6fa5;
-    color: white;
-    border: none;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
-    cursor: pointer;
-    font-size: 24px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 1000;
-    opacity: 0;
-    visibility: hidden;
-    transform: translateY(20px);
-  }
-  
-  .back-to-top-btn:hover {
-    background-color: #3a5a85;
-    transform: translateY(-5px);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  }
-  
-  .back-to-top-btn:active {
-    transform: translateY(-2px);
-  }
-  
-  /* 按钮显示时的动画 */
-  .back-to-top-btn.show {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
-  }
-  
-  /* 平板设备适配 (768px - 1024px) */
-  @media (max-width: 1024px) {
-    .back-to-top-btn {
-      bottom: 30px;
-      right: 30px;
-      width: 52px;
-      height: 52px;
-      font-size: 22px;
-    }
-  }
-  
-  /* 移动端适配 (<= 768px) */
-  @media (max-width: 768px) {
-    .back-to-top-btn {
-      bottom: 24px;
-      right: 24px;
-      width: 48px;
-      height: 48px;
-      font-size: 20px;
-      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
-    }
-  }
-  
-  /* 小屏手机适配 (<= 480px) */
-  @media (max-width: 480px) {
-    .back-to-top-btn {
-      bottom: 20px;
-      right: 20px;
-      width: 44px;
-      height: 44px;
-      font-size: 18px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-    }
-  }
-`;
-
-// 动态添加样式
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = customAlertStyles;
-  document.head.appendChild(style);
-}

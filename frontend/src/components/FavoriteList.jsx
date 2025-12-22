@@ -102,8 +102,10 @@ function FavoriteList() {
                   {getFileIcon(file.type)}
                 </div>
                 <div className="file-name">
-                  <span className="file-name-text">{file.name}</span>
-                  {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
+                  <div className="file-name-container">
+                    <span className="file-name-text">{file.name}</span>
+                    {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
+                  </div>
                 </div>
                 <div className="file-meta">
                   <div>大小: {formatSize(file.size)}</div>

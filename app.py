@@ -1212,10 +1212,10 @@ def upload_file():
         if 'file' not in request.files:
             return jsonify({'error': '没有文件被上传'}), 400
         
-        file = request.files['file']
+        # 获取所有上传的文件
+        files = request.files.getlist('file')
         
-        # 检查文件名是否为空
-        if file.filename == '':
+        if not files or files[0].filename == '':
             return jsonify({'error': '没有选择文件'}), 400
         
         # 获取目标目录
@@ -1230,37 +1230,45 @@ def upload_file():
         if not save_path.exists() or not save_path.is_dir():
             return jsonify({'error': '目标目录不存在'}), 400
         
-        # 直接使用原始文件名（支持中文），但要确保路径安全
-        filename = file.filename
-        full_save_path = save_path / filename
-        
-        # 避免文件名冲突
-        if full_save_path.exists():
-            # 使用序号方式处理文件名冲突（如"image(1).jpg"）
-            file_ext = Path(filename).suffix
-            file_name = Path(filename).stem
-            counter = 1
+        # 保存所有上传的文件
+        for file in files:
+            if file.filename == '':
+                continue
+                
+            # 直接使用原始文件名（支持中文），但要确保路径安全
+            filename = file.filename
+            full_save_path = save_path / filename
             
-            # 检查是否已经有序号
-            match = re.match(r'^(.*?)_?\((\d+)\)$', file_name)
-            if match:
-                file_name = match.group(1)
-                counter = int(match.group(2)) + 1
+            # 避免文件名冲突
+            if full_save_path.exists():
+                # 使用序号方式处理文件名冲突（如"image(1).jpg"）
+                file_ext = Path(filename).suffix
+                file_name = Path(filename).stem
+                counter = 1
+                
+                # 检查是否已经有序号
+                match = re.match(r'^(.*?)_?\((\d+)\)$', file_name)
+                if match:
+                    file_name = match.group(1)
+                    counter = int(match.group(2)) + 1
+                
+                # 寻找可用的文件名
+                while True:
+                    new_filename = f"{file_name}({counter}){file_ext}"
+                    new_full_save_path = save_path / new_filename
+                    if not new_full_save_path.exists():
+                        filename = new_filename
+                        full_save_path = new_full_save_path
+                        break
+                    counter += 1
             
-            # 寻找可用的文件名
-            while True:
-                new_filename = f"{file_name}({counter}){file_ext}"
-                new_full_save_path = save_path / new_filename
-                if not new_full_save_path.exists():
-                    filename = new_filename
-                    full_save_path = new_full_save_path
-                    break
-                counter += 1
-        
-        # 保存文件
-        file.save(str(full_save_path))
-        
-        logger.info(f"文件上传成功: {full_save_path}")
+            # 保存文件
+            file.save(str(full_save_path))
+            
+            logger.info(f"文件上传成功: {full_save_path}")
+            
+            # 更新文件的修改时间（可选）
+            full_save_path.touch()
         
         # 清除该目录的缓存，确保下次请求能获取到新文件
         cache_key = str(save_path)
@@ -1270,8 +1278,7 @@ def upload_file():
         return jsonify({
             'success': True,
             'message': '文件上传成功',
-            'filename': filename,
-            'path': f"{target_dir}/{filename}"
+            'count': len(files)
         })
         
     except Exception as e:
