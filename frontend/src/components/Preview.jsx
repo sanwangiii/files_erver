@@ -106,11 +106,11 @@ function Preview() {
               const firstSubtitleIndex = subtitleList[0].index
               console.log('默认开启第一个字幕轨道，索引:', firstSubtitleIndex)
               
-              // 加载并解析第一个字幕轨道 - 这里previewFile已经设置，所以previewFile.path有值
+              // 加载并解析第一个字幕轨道
               try {
                 console.log('开始加载第一个字幕轨道，索引:', firstSubtitleIndex)
-                // 直接加载字幕，不使用setTimeout
-                await loadSubtitle(firstSubtitleIndex)
+                // 直接传递params.path作为文件路径，不依赖previewFile状态
+                await loadSubtitle(firstSubtitleIndex, params.path)
                 // 字幕加载完成后，再设置selectedSubtitles，确保顺序正确
                 setSelectedSubtitles([firstSubtitleIndex])
               } catch (error) {
@@ -291,9 +291,9 @@ function Preview() {
   }
   
   // 加载字幕内容
-  const loadSubtitle = async (subtitleIndex) => {
+  const loadSubtitle = async (subtitleIndex, filePath) => {
     console.log('========================================')
-    console.log('开始加载字幕，索引:', subtitleIndex)
+    console.log('开始加载字幕，索引:', subtitleIndex, '文件路径:', filePath)
     try {
       // 安全获取用户信息和token
       let token = ''
@@ -309,13 +309,12 @@ function Preview() {
       }
       console.log('获取到的token:', token ? '有token' : '无token')
       
-      if (!previewFile?.path) {
-        console.error('previewFile.path 为空，无法加载字幕')
+      if (!filePath) {
+        console.error('文件路径为空，无法加载字幕')
         return
       }
-      console.log('previewFile.path:', previewFile.path)
       
-      const url = `/api/subtitle_content/${encodeURIComponent(previewFile.path)}?index=${subtitleIndex}&token=${token}`
+      const url = `/api/subtitle_content/${encodeURIComponent(filePath)}?index=${subtitleIndex}&token=${token}`
       console.log('字幕请求URL:', url)
       
       const response = await fetch(url)
@@ -360,64 +359,76 @@ function Preview() {
     console.log('========================================')
   }
   
+  // 使用二分查找优化字幕查找，提高性能
+  const findCurrentCue = useCallback((cues, currentTime) => {
+    if (!cues || cues.length === 0) return null
+    
+    let left = 0
+    let right = cues.length - 1
+    let matchedCue = null
+    
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2)
+      const cue = cues[mid]
+      
+      if (currentTime >= cue.startTime && currentTime < cue.endTime) {
+        matchedCue = cue
+        break
+      } else if (currentTime < cue.startTime) {
+        right = mid - 1
+      } else {
+        left = mid + 1
+      }
+    }
+    
+    return matchedCue
+  }, [])
+
   // 更新所有选中轨道的字幕 - 使用useCallback包装，避免无限循环
   const updateSubtitles = useCallback(() => {
     const currentTime = videoRef.current?.currentTime || 0
-    console.log('========================================')
-    console.log('更新所有选中轨道的字幕，当前时间:', currentTime)
-    console.log('当前选中的字幕轨道:', selectedSubtitles)
-    console.log('当前subtitleTracksMap:', subtitleTracksMap)
     
     const newCues = {}
     
     // 遍历所有选中的字幕轨道
     for (const subtitleIndex of selectedSubtitles) {
       const cues = subtitleTracksMap[subtitleIndex] || []
-      console.log(`检查轨道 ${subtitleIndex}，共 ${cues.length} 个字幕`)
       
-      // 查找当前时间对应的字幕
-      let matchedCue = null
-      for (const cue of cues) {
-        if (currentTime >= cue.startTime && currentTime < cue.endTime) {
-          matchedCue = cue
-          break
-        }
-      }
-      
-      if (matchedCue) {
-        console.log(`轨道 ${subtitleIndex} 找到匹配字幕:`, matchedCue.text)
-        newCues[subtitleIndex] = matchedCue.text
-      } else {
-        console.log(`轨道 ${subtitleIndex} 无匹配字幕`)
-        newCues[subtitleIndex] = null
-      }
+      // 使用二分查找优化，提高性能
+      const matchedCue = findCurrentCue(cues, currentTime)
+      newCues[subtitleIndex] = matchedCue ? matchedCue.text : null
     }
     
     setCurrentCues(newCues)
-    console.log('========================================')
-  }, [selectedSubtitles, subtitleTracksMap])
+  }, [selectedSubtitles, subtitleTracksMap, findCurrentCue])
   
   // 监听selectedSubtitles变化，确保所有选中的字幕都已加载
   useEffect(() => {
-    console.log('selectedSubtitles变化，检查并加载未加载的字幕')
-    console.log('当前selectedSubtitles:', selectedSubtitles)
-    console.log('当前subtitleTracksMap:', subtitleTracksMap)
-    
     // 遍历所有选中的字幕轨道
     selectedSubtitles.forEach(async (subtitleIndex) => {
       // 如果该轨道的字幕数据尚未加载，就加载它
       if (!subtitleTracksMap[subtitleIndex] || subtitleTracksMap[subtitleIndex].length === 0) {
-        console.log(`轨道 ${subtitleIndex} 尚未加载，开始加载`)
         try {
-          await loadSubtitle(subtitleIndex)
+          // 只有在previewFile.path存在时才加载字幕
+          if (previewFile?.path) {
+            await loadSubtitle(subtitleIndex, previewFile.path)
+          } else {
+            console.error('previewFile.path 为空，无法加载字幕轨道:', subtitleIndex)
+          }
         } catch (error) {
           console.error(`加载轨道 ${subtitleIndex} 失败:`, error)
         }
-      } else {
-        console.log(`轨道 ${subtitleIndex} 已加载，跳过`)
       }
     })
-  }, [selectedSubtitles, subtitleTracksMap, loadSubtitle])
+  }, [selectedSubtitles, subtitleTracksMap, loadSubtitle, previewFile])
+
+  // 使用节流函数优化，减少updateSubtitles的调用频率
+  const throttledUpdateSubtitles = useCallback(() => {
+    // 使用requestAnimationFrame优化，确保只在浏览器重绘时更新
+    requestAnimationFrame(() => {
+      updateSubtitles()
+    })
+  }, [updateSubtitles])
 
   // 监听视频时间更新，同步字幕
   useEffect(() => {
@@ -427,28 +438,21 @@ function Preview() {
       return
     }
     
-    // 添加事件监听器
-    videoElement.addEventListener('timeupdate', updateSubtitles)
+    // 添加事件监听器 - 只保留必要的事件
+    videoElement.addEventListener('timeupdate', throttledUpdateSubtitles)
     videoElement.addEventListener('play', updateSubtitles)
     videoElement.addEventListener('seeked', updateSubtitles)
-    videoElement.addEventListener('loadeddata', updateSubtitles) // 视频加载完成时触发一次
-    videoElement.addEventListener('canplay', updateSubtitles) // 可以播放时触发一次
-    videoElement.addEventListener('ratechange', updateSubtitles) // 播放速度变化时触发
     
     // 手动触发一次，确保初始状态正确
-    console.log('手动触发初始字幕更新')
     updateSubtitles()
     
     return () => {
       // 移除事件监听器
-      videoElement.removeEventListener('timeupdate', updateSubtitles)
+      videoElement.removeEventListener('timeupdate', throttledUpdateSubtitles)
       videoElement.removeEventListener('play', updateSubtitles)
       videoElement.removeEventListener('seeked', updateSubtitles)
-      videoElement.removeEventListener('loadeddata', updateSubtitles)
-      videoElement.removeEventListener('canplay', updateSubtitles)
-      videoElement.removeEventListener('ratechange', updateSubtitles)
     }
-  }, [selectedSubtitles, subtitleTracksMap])
+  }, [selectedSubtitles, subtitleTracksMap, throttledUpdateSubtitles])
   
   // 改进全屏处理 - 确保字幕在各种全屏状态下都能显示
   useEffect(() => {

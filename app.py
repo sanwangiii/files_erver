@@ -1137,9 +1137,6 @@ def serve_video(filename):
 
     file_ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
     
-    # 获取字幕参数
-    subtitle_index = request.args.get('subtitle')
-    
     # 处理视频文件的字节范围请求
     if file_ext in VIDEO_EXTENSIONS:
         range_header = request.headers.get('Range', None)
@@ -1153,79 +1150,31 @@ def serve_video(filename):
                 end = int(match.group(2)) if match.group(2) else file_size - 1
                 length = end - start + 1
                 
-                # 如果没有选择字幕，使用常规文件读取
-                if not subtitle_index:
-                    # 创建部分响应
-                    def generate():
-                        with open(file_path, 'rb') as f:
-                            f.seek(start)
-                            remaining = length
-                            while remaining > 0:
-                                # 增加缓冲块大小以提高大文件处理性能
-                                chunk_size = min(1024 * 1024, remaining)  # 使用1MB缓冲
-                                data = f.read(chunk_size)
-                                if not data:
-                                    break
-                                remaining -= len(data)
-                                yield data
-
-                    response = app.response_class(
-                        generate(),
-                        status=206,
-                        mimetype=mimetypes.guess_type(file_path)[0],
-                        direct_passthrough=True
-                    )
-                    response.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
-                    response.headers['Content-Length'] = str(length)
-                    response.headers['Accept-Ranges'] = 'bytes'
-                    return response
-                else:
-                    # 使用FFmpeg生成包含字幕的视频流
-                    import subprocess
-                    
-                    # 构建FFmpeg命令
-                    cmd = [
-                        'ffmpeg',
-                        '-i', str(file_path),
-                        '-ss', str(start / file_size),  # 开始时间（秒）
-                        '-t', str(length / file_size),  # 持续时间（秒）
-                        '-map', '0:v:0',  # 视频流
-                        '-map', f'0:s:{subtitle_index}',  # 选择的字幕流
-                        '-c:v', 'copy',  # 视频流复制
-                        '-c:s', 'mov_text',  # 字幕编码
-                        '-f', 'mp4',  # 输出格式
-                        '-movflags', 'frag_keyframe+empty_moov',  # 适合流媒体的MP4格式
-                        '-'  # 输出到标准输出
-                    ]
-                    
-                    # 执行FFmpeg命令
-                    process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        bufsize=1024 * 1024  # 1MB缓冲
-                    )
-                    
-                    # 生成响应数据
-                    def generate_ffmpeg():
-                        while True:
-                            data = process.stdout.read(1024 * 1024)  # 读取1MB数据
+                # 直接返回原始视频流，不需要使用FFmpeg处理字幕
+                # 前端已经实现了自定义字幕渲染
+                def generate():
+                    with open(file_path, 'rb') as f:
+                        f.seek(start)
+                        remaining = length
+                        while remaining > 0:
+                            # 增加缓冲块大小以提高大文件处理性能
+                            chunk_size = min(1024 * 1024, remaining)  # 使用1MB缓冲
+                            data = f.read(chunk_size)
                             if not data:
                                 break
+                            remaining -= len(data)
                             yield data
-                        process.stdout.close()
-                        process.wait()
-                    
-                    response = app.response_class(
-                        generate_ffmpeg(),
-                        status=206,
-                        mimetype='video/mp4',
-                        direct_passthrough=True
-                    )
-                    response.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
-                    response.headers['Content-Length'] = str(length)
-                    response.headers['Accept-Ranges'] = 'bytes'
-                    return response
+
+                response = app.response_class(
+                    generate(),
+                    status=206,
+                    mimetype=mimetypes.guess_type(file_path)[0],
+                    direct_passthrough=True
+                )
+                response.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+                response.headers['Content-Length'] = str(length)
+                response.headers['Accept-Ranges'] = 'bytes'
+                return response
 
     # 完整文件响应
     return send_file(
