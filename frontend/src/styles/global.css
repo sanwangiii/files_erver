@@ -1563,65 +1563,8 @@ body {
   overflow: hidden;
 }
 
-/* 自定义全屏按钮样式 */
-.custom-fullscreen-btn {
-  position: absolute;
-  bottom: 20px;
-  right: 20px;
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
-  border: none;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  cursor: pointer;
-  font-size: 16px;
-  z-index: 999;
-  transition: all 0.3s ease;
-}
 
-.custom-fullscreen-btn:hover {
-  background: rgba(0, 0, 0, 0.8);
-  transform: scale(1.1);
-}
 
-.custom-fullscreen-btn:active {
-  transform: scale(0.95);
-}
-
-/* 全屏模式下的自定义全屏按钮 */
-.video-with-subtitles:fullscreen .custom-fullscreen-btn,
-.video-with-subtitles:-webkit-full-screen .custom-fullscreen-btn,
-.video-with-subtitles:-moz-full-screen .custom-fullscreen-btn,
-.video-with-subtitles:-ms-fullscreen .custom-fullscreen-btn {
-  position: absolute;
-  bottom: 80px;
-  right: 20px;
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
-  border: none;
-  border-radius: 50%;
-  width: 50px;
-  height: 50px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  cursor: pointer;
-  font-size: 20px;
-  z-index: 999;
-  transition: all 0.3s ease;
-}
-
-.video-with-subtitles:fullscreen .custom-fullscreen-btn:hover,
-.video-with-subtitles:-webkit-full-screen .custom-fullscreen-btn:hover,
-.video-with-subtitles:-moz-full-screen .custom-fullscreen-btn:hover,
-.video-with-subtitles:-ms-fullscreen .custom-fullscreen-btn:hover {
-  background: rgba(0, 0, 0, 0.8);
-  transform: scale(1.1);
-}
 
 /* 确保视频元素在容器中正确显示 */
 .video-preview {
@@ -1658,7 +1601,48 @@ body {
   opacity: 1 !important;
 }
 
-/* 修复全屏模式下的字幕显示问题 - 当整个视频容器进入全屏时 */
+/* 确保视频容器在所有情况下都正确显示 */
+.video-with-subtitles {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: black;
+}
+
+/* 确保视频元素本身在非全屏状态下也正确 */
+.video-preview {
+  width: 100%;
+  max-width: 900px;
+  height: auto;
+  max-height: 75vh;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  background-color: black;
+  overflow: visible;
+}
+
+
+
+/* 当视频元素直接进入全屏时 */
+video:fullscreen,
+video:-webkit-full-screen,
+video:-moz-full-screen,
+video:-ms-fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: black !important;
+  z-index: 1 !important;
+}
+
+/* 当视频容器进入全屏时 */
 .video-with-subtitles:fullscreen,
 .video-with-subtitles:-webkit-full-screen,
 .video-with-subtitles:-moz-full-screen,
@@ -1666,10 +1650,12 @@ body {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  max-width: 100vw !important;
-  max-height: 100vh !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   margin: 0 !important;
   padding: 0 !important;
   background-color: black !important;
@@ -1680,6 +1666,7 @@ body {
   box-shadow: none !important;
 }
 
+/* 视频容器全屏时的视频样式 */
 .video-with-subtitles:fullscreen .video-preview,
 .video-with-subtitles:-webkit-full-screen .video-preview,
 .video-with-subtitles:-moz-full-screen .video-preview,
@@ -1687,42 +1674,234 @@ body {
   position: absolute !important;
   top: 0 !important;
   left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
   width: 100% !important;
   height: 100% !important;
   max-width: 100% !important;
   max-height: 100% !important;
-  object-fit: contain !important;
+  object-fit: cover !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   background-color: black !important;
   z-index: 1 !important;
 }
 
-/* 确保在各种全屏情况下，视频都能占满整个屏幕 */
-:fullscreen .video-with-subtitles .video-preview,
-:-webkit-full-screen .video-with-subtitles .video-preview,
-:-moz-full-screen .video-with-subtitles .video-preview,
-:-ms-fullscreen .video-with-subtitles .video-preview {
+/* 处理各种全屏情况下的视频样式 */
+:fullscreen .video-preview,
+:-webkit-full-screen .video-preview,
+:-moz-full-screen .video-preview,
+:-ms-fullscreen .video-preview {
   position: absolute !important;
   top: 0 !important;
   left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
   width: 100% !important;
   height: 100% !important;
   max-width: 100% !important;
   max-height: 100% !important;
-  object-fit: contain !important;
+  object-fit: cover !important;
   border-radius: 0 !important;
   box-shadow: none !important;
   background-color: black !important;
   z-index: 1 !important;
 }
 
-.video-with-subtitles:fullscreen .custom-subtitles-container,
-.video-with-subtitles:-webkit-full-screen .custom-subtitles-container,
-.video-with-subtitles:-moz-full-screen .custom-subtitles-container,
-.video-with-subtitles:-ms-fullscreen .custom-subtitles-container {
+/* 处理各种全屏情况下的容器样式 */
+:fullscreen .video-with-subtitles,
+:-webkit-full-screen .video-with-subtitles,
+:-moz-full-screen .video-with-subtitles,
+:-ms-fullscreen .video-with-subtitles {
   position: absolute !important;
-  bottom: 60px !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+  background-color: black !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  z-index: 1 !important;
+}
+
+/* 确保根全屏元素也正确设置 */
+:fullscreen,
+:-webkit-full-screen,
+:-moz-full-screen,
+:-ms-fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: black !important;
+  overflow: hidden !important;
+}
+
+/* 字幕容器基础样式 */
+.custom-subtitles-container {
+  position: absolute !important;
+  bottom: 40px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 85% !important;
+  max-width: 85% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000 !important;
+  pointer-events: none !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+/* 确保视频容器在所有情况下都正确显示 */
+.video-with-subtitles {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: black;
+}
+
+/* 确保视频元素本身在非全屏状态下也正确 */
+.video-preview {
+  width: 100%;
+  max-width: 900px;
+  height: auto;
+  max-height: 75vh;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  background-color: black;
+  overflow: visible;
+}
+
+/* 当视频元素直接进入全屏时 */
+video:fullscreen,
+video:-webkit-full-screen,
+video:-moz-full-screen,
+video:-ms-fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: black !important;
+  z-index: 1 !important;
+}
+
+/* 当视频容器进入全屏时 */
+.video-with-subtitles:fullscreen,
+.video-with-subtitles:-webkit-full-screen,
+.video-with-subtitles:-moz-full-screen,
+.video-with-subtitles:-ms-fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: black !important;
+  overflow: hidden !important;
+  display: block !important;
+  z-index: 9999 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* 视频容器全屏时的视频样式 */
+.video-with-subtitles:fullscreen .video-preview,
+.video-with-subtitles:-webkit-full-screen .video-preview,
+.video-with-subtitles:-moz-full-screen .video-preview,
+.video-with-subtitles:-ms-fullscreen .video-preview {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: black !important;
+  z-index: 1 !important;
+}
+
+/* 处理各种全屏情况下的视频样式 */
+:fullscreen .video-preview,
+:-webkit-full-screen .video-preview,
+:-moz-full-screen .video-preview,
+:-ms-fullscreen .video-preview {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: black !important;
+  z-index: 1 !important;
+}
+
+/* 处理各种全屏情况下的容器样式 */
+:fullscreen .video-with-subtitles,
+:-webkit-full-screen .video-with-subtitles,
+:-moz-full-screen .video-with-subtitles,
+:-ms-fullscreen .video-with-subtitles {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+  background-color: black !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  z-index: 1 !important;
+}
+
+/* 确保根全屏元素也正确设置 */
+:fullscreen,
+:-webkit-full-screen,
+:-moz-full-screen,
+:-ms-fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: black !important;
+  overflow: hidden !important;
+}
+
+/* 字幕容器基础样式 */
+.custom-subtitles-container {
+  position: absolute !important;
+  bottom: 40px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
   width: 85% !important;
@@ -1734,43 +1913,23 @@ body {
   align-items: center !important;
   justify-content: center !important;
   pointer-events: none !important;
-  visibility: visible !important;
-  opacity: 1 !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
 }
 
-/* 兼容浏览器全屏API的其他情况 */
-:fullscreen .video-with-subtitles,
-:-webkit-full-screen .video-with-subtitles,
-:-moz-full-screen .video-with-subtitles,
-:-ms-fullscreen .video-with-subtitles {
-  position: relative !important;
-  width: 100% !important;
-  height: 100% !important;
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-  background-color: black !important;
-}
-
-:fullscreen .video-preview,
-:-webkit-full-screen .video-preview,
-:-moz-full-screen .video-preview,
-:-ms-fullscreen .video-preview {
-  width: 100% !important;
-  height: 100% !important;
-  max-width: 100% !important;
-  max-height: 100% !important;
-  object-fit: contain !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-}
-
+/* 各种全屏情况下的字幕容器样式 */
+.video-with-subtitles:fullscreen .custom-subtitles-container,
+.video-with-subtitles:-webkit-full-screen .custom-subtitles-container,
+.video-with-subtitles:-moz-full-screen .custom-subtitles-container,
+.video-with-subtitles:-ms-fullscreen .custom-subtitles-container,
 :fullscreen .custom-subtitles-container,
 :-webkit-full-screen .custom-subtitles-container,
 :-moz-full-screen .custom-subtitles-container,
 :-ms-fullscreen .custom-subtitles-container {
   position: absolute !important;
-  bottom: 60px !important;
+  bottom: 1% !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
   width: 85% !important;
@@ -1784,6 +1943,30 @@ body {
   pointer-events: none !important;
   visibility: visible !important;
   opacity: 1 !important;
+  background: transparent !important;
+}
+
+/* 当视频元素直接全屏时，确保字幕容器显示 */
+video:fullscreen + .custom-subtitles-container,
+video:-webkit-full-screen + .custom-subtitles-container,
+video:-moz-full-screen + .custom-subtitles-container,
+video:-ms-fullscreen + .custom-subtitles-container {
+  position: absolute !important;
+  bottom: 5% !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 85% !important;
+  max-width: 85% !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: transparent !important;
 }
 
 /* 视频与字幕容器 */

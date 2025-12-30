@@ -78,60 +78,71 @@ function Preview() {
           const backendPort = 8000
           const fullVideoUrl = `http://${hostname}:${backendPort}/video/${encodeURIComponent(params.path)}?token=${token}`
           vlcProtocolUrl = `vlc://${fullVideoUrl}`
-          
-          // 先设置previewFile，确保loadSubtitle时previewFile.path有值
-          setPreviewFile({
-            name: params.name,
-            preview_url: fileUrl,
-            vlc_url: vlcProtocolUrl,
-            type: params.type,
-            path: params.path // 保存路径用于后续字幕操作
-          })
-          
-          // 获取字幕轨道信息
-          console.log('========================================')
-          console.log('开始获取字幕轨道信息')
-          const subtitlesResponse = await fetch(`/api/subtitles/${encodeURIComponent(params.path)}?token=${token}`)
-          console.log('字幕轨道请求响应状态:', subtitlesResponse.status)
-          if (subtitlesResponse.ok) {
-            const subtitlesData = await subtitlesResponse.json()
-            console.log('获取到的字幕轨道数据:', subtitlesData)
-            const subtitleList = subtitlesData.subtitles || []
-            console.log('获取到字幕轨道列表:', subtitleList)
-            console.log('字幕轨道数量:', subtitleList.length)
-            setSubtitles(subtitleList)
-            
-            // 默认开启第一个字幕轨道
-            if (subtitleList.length > 0) {
-              const firstSubtitleIndex = subtitleList[0].index
-              console.log('默认开启第一个字幕轨道，索引:', firstSubtitleIndex)
-              
-              // 加载并解析第一个字幕轨道
-              try {
-                console.log('开始加载第一个字幕轨道，索引:', firstSubtitleIndex)
-                // 直接传递params.path作为文件路径，不依赖previewFile状态
-                await loadSubtitle(firstSubtitleIndex, params.path)
-                // 字幕加载完成后，再设置selectedSubtitles，确保顺序正确
-                setSelectedSubtitles([firstSubtitleIndex])
-              } catch (error) {
-                console.error('加载第一个字幕轨道时出错:', error)
-                console.error('错误堆栈:', error.stack)
+        }
+        
+        // 优先设置previewFile，让视频先显示
+        setPreviewFile({
+          name: params.name,
+          preview_url: fileUrl,
+          vlc_url: vlcProtocolUrl,
+          type: params.type,
+          path: params.path // 保存路径用于后续字幕操作
+        })
+        
+        // 视频加载后，异步获取字幕信息，不阻塞视频显示
+        if (params.type === 'video') {
+          // 异步获取字幕轨道信息，不阻塞视频显示
+          (async () => {
+            try {
+              // 获取字幕轨道信息
+              console.log('========================================')
+              console.log('开始获取字幕轨道信息')
+              const subtitlesResponse = await fetch(`/api/subtitles/${encodeURIComponent(params.path)}?token=${token}`)
+              console.log('字幕轨道请求响应状态:', subtitlesResponse.status)
+              if (subtitlesResponse.ok) {
+                const subtitlesData = await subtitlesResponse.json()
+                console.log('获取到的字幕轨道数据:', subtitlesData)
+                const subtitleList = subtitlesData.subtitles || []
+                console.log('获取到字幕轨道列表:', subtitleList)
+                console.log('字幕轨道数量:', subtitleList.length)
+                setSubtitles(subtitleList)
+                
+                // 默认开启第一个字幕轨道
+                if (subtitleList.length > 0) {
+                  const firstSubtitleIndex = subtitleList[0].index
+                  console.log('默认开启第一个字幕轨道，索引:', firstSubtitleIndex)
+                  
+                  // 加载并解析第一个字幕轨道
+                  try {
+                    console.log('开始加载第一个字幕轨道，索引:', firstSubtitleIndex)
+                    // 直接传递params.path作为文件路径，不依赖previewFile状态
+                    await loadSubtitle(firstSubtitleIndex, params.path)
+                    // 字幕加载完成后，再设置selectedSubtitles，确保顺序正确
+                    setSelectedSubtitles([firstSubtitleIndex])
+                  } catch (error) {
+                    console.error('加载第一个字幕轨道时出错:', error)
+                    console.error('错误堆栈:', error.stack)
+                  }
+                } else {
+                  console.log('没有找到字幕轨道')
+                }
+              } else {
+                console.error('获取字幕轨道列表失败，响应状态:', subtitlesResponse.status)
+                const errorText = await subtitlesResponse.text()
+                console.error('错误信息:', errorText)
               }
-            } else {
-              console.log('没有找到字幕轨道')
+              console.log('========================================')
+            } catch (error) {
+              console.error('获取字幕信息失败:', error)
             }
-          } else {
-            console.error('获取字幕轨道列表失败，响应状态:', subtitlesResponse.status)
-            const errorText = await subtitlesResponse.text()
-            console.error('错误信息:', errorText)
-          }
-          console.log('========================================')
+          })()
         }
       }
     } catch (error) {
       console.error('预览失败:', error)
       setPreviewError('预览失败，请检查文件权限或网络连接')
     } finally {
+      // 立即结束加载状态，让视频先显示
       setPreviewLoading(false)
     }
   }
@@ -457,7 +468,9 @@ function Preview() {
   // 改进全屏处理 - 确保字幕在各种全屏状态下都能显示
   useEffect(() => {
     const videoElement = videoRef.current
-    if (!videoElement) return
+    const container = subtitleRef.current
+    
+    if (!videoElement || !container) return
     
     // 检查当前是否处于全屏状态的辅助函数
     const isFullscreen = () => {
@@ -469,18 +482,37 @@ function Preview() {
     
     // 处理全屏变化，确保字幕正确显示
     const handleFullscreenChange = () => {
-      console.log('检测到全屏变化，强制更新字幕')
       // 强制更新字幕
       updateSubtitles()
       
-      // 如果视频进入全屏，确保字幕容器也正确显示
-      const container = subtitleRef.current
-      if (container && isFullscreen()) {
-        // 确保字幕容器样式正确
-        console.log('当前处于全屏状态，确保字幕容器样式正确')
-        // 强制触发重排，确保样式生效
-        container.offsetHeight
+      // 如果视频元素直接进入全屏，我们需要调整字幕容器的位置
+      const fullscreenElement = document.fullscreenElement || 
+                              document.webkitFullscreenElement || 
+                              document.mozFullScreenElement || 
+                              document.msFullscreenElement
+      
+      if (fullscreenElement === videoElement) {
+        // 视频元素直接进入全屏，确保字幕容器在视频全屏时也能正确显示
+        container.style.position = 'absolute'
+        container.style.top = '0'
+        container.style.left = '0'
+        container.style.width = '100%'
+        container.style.height = '100%'
+        container.style.zIndex = '1000'
+        container.style.background = 'transparent'
+      } else if (!isFullscreen()) {
+        // 退出全屏，恢复正常样式
+        container.style.position = 'relative'
+        container.style.top = 'auto'
+        container.style.left = 'auto'
+        container.style.width = '100%'
+        container.style.height = 'auto'
+        container.style.maxWidth = '900px'
+        container.style.background = 'black'
       }
+      
+      // 强制触发重排，确保样式生效
+      container.offsetHeight
     }
     
     // 添加跨浏览器全屏事件监听器到document
@@ -492,6 +524,12 @@ function Preview() {
     // 同时添加到视频元素本身，确保各种全屏方式都能被捕获
     videoElement.addEventListener('fullscreenchange', handleFullscreenChange)
     videoElement.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    videoElement.addEventListener('mozfullscreenchange', handleFullscreenChange)
+    videoElement.addEventListener('MSFullscreenChange', handleFullscreenChange)
+    
+    // 添加video元素的enterfullscreen和exitfullscreen事件监听
+    videoElement.addEventListener('enterfullscreen', handleFullscreenChange)
+    videoElement.addEventListener('webkitenterfullscreen', handleFullscreenChange)
     videoElement.addEventListener('mozfullscreenchange', handleFullscreenChange)
     videoElement.addEventListener('MSFullscreenChange', handleFullscreenChange)
     
@@ -507,6 +545,10 @@ function Preview() {
       videoElement.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
       videoElement.removeEventListener('mozfullscreenchange', handleFullscreenChange)
       videoElement.removeEventListener('MSFullscreenChange', handleFullscreenChange)
+      
+      // 移除enterfullscreen相关事件
+      videoElement.removeEventListener('enterfullscreen', handleFullscreenChange)
+      videoElement.removeEventListener('webkitenterfullscreen', handleFullscreenChange)
     }
   }, [updateSubtitles])
   
@@ -574,7 +616,6 @@ function Preview() {
                     playsInline
                     preload="metadata"
                     onError={() => setPreviewError('视频加载失败')}
-                    controlsList="nofullscreen"
                   ></video>
                   {/* 显示所有选中轨道的字幕 */}
                   <div className="custom-subtitles-container">
@@ -597,65 +638,7 @@ function Preview() {
                       return null
                     })}
                   </div>
-                  {/* 自定义全屏按钮 */}
-                  <button
-                    className="custom-fullscreen-btn"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      
-                      // 直接使用video元素进行全屏，简化实现
-                      const video = videoRef.current
-                      console.log('点击全屏按钮，当前视频元素:', video)
-                      
-                      // 正确检查是否处于全屏状态
-                      const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement)
-                      console.log('当前全屏状态:', isFullscreen)
-                      
-                      try {
-                        if (!isFullscreen) {
-                          // 进入全屏
-                          console.log('尝试进入全屏')
-                          if (video.requestFullscreen) {
-                            video.requestFullscreen()
-                            console.log('调用requestFullscreen()')
-                          } else if (video.webkitRequestFullscreen) {
-                            video.webkitRequestFullscreen()
-                            console.log('调用webkitRequestFullscreen()')
-                          } else if (video.mozRequestFullScreen) {
-                            video.mozRequestFullScreen()
-                            console.log('调用mozRequestFullScreen()')
-                          } else if (video.msRequestFullscreen) {
-                            video.msRequestFullscreen()
-                            console.log('调用msRequestFullscreen()')
-                          } else {
-                            console.error('当前浏览器不支持全屏API')
-                          }
-                        } else {
-                          // 退出全屏
-                          console.log('尝试退出全屏')
-                          if (document.exitFullscreen) {
-                            document.exitFullscreen()
-                            console.log('调用exitFullscreen()')
-                          } else if (document.webkitExitFullscreen) {
-                            document.webkitExitFullscreen()
-                            console.log('调用webkitExitFullscreen()')
-                          } else if (document.mozCancelFullScreen) {
-                            document.mozCancelFullScreen()
-                            console.log('调用mozCancelFullScreen()')
-                          } else if (document.msExitFullscreen) {
-                            document.msExitFullscreen()
-                            console.log('调用msExitFullscreen()')
-                          }
-                        }
-                      } catch (err) {
-                        console.error('全屏操作失败:', err)
-                      }
-                    }}
-                    aria-label="切换全屏"
-                  >
-                    <i className="fas fa-expand"></i>
-                  </button>
+
                 </div>
                 
                 {/* 字幕选择器 - 支持多选 */}
@@ -678,8 +661,12 @@ function Preview() {
                               if (isChecked) {
                                 // 添加到选中列表
                                 newSelectedSubtitles = [...selectedSubtitles, subtitleIndex]
-                                // 加载新选中的字幕轨道
-                                loadSubtitle(subtitleIndex)
+                                // 加载新选中的字幕轨道，从previewFile获取文件路径
+                                if (previewFile?.path) {
+                                  loadSubtitle(subtitleIndex, previewFile.path)
+                                } else {
+                                  console.error('文件路径不存在，无法加载字幕轨道:', subtitleIndex)
+                                }
                               } else {
                                 // 从选中列表中移除
                                 newSelectedSubtitles = selectedSubtitles.filter(index => index !== subtitleIndex)
