@@ -1389,7 +1389,1014 @@ body {
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   background-color: #000;
+  overflow: visible;
+}
+
+/* 字幕选择器样式 - 支持多选 */
+.subtitle-selector {
+  margin: 15px 0;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 12px;
+  border: 1px solid #e9ecef;
+}
+
+.subtitle-selector-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #333;
+}
+
+.subtitle-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.subtitle-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #555;
+  transition: all 0.2s ease;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background-color: white;
+  border: 1px solid #e0e0e0;
+  user-select: none;
+}
+
+.subtitle-checkbox-item:hover {
+  background-color: #e8f0fe;
+  border-color: #5d8bc5;
+  color: #333;
+}
+
+.subtitle-checkbox-item input[type="checkbox"] {
+  transform: scale(1.2);
+  cursor: pointer;
+  accent-color: #5d8bc5;
+}
+
+.subtitle-checkbox-label {
+  cursor: pointer;
+  user-select: none;
+}
+
+.subtitle-info {
+  font-size: 13px;
+  color: #666;
+  text-align: right;
+  padding-top: 8px;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* 自定义字幕容器，用于同时显示多个字幕 */
+.custom-subtitles-container {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 85%;
+  max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* 自定义字幕样式，支持多个同时显示 */
+.custom-subtitle {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: white !important;
+  font-size: 24px !important;
+  font-weight: 500 !important;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9) !important;
+  text-align: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  z-index: 1000 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  word-wrap: break-word !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  line-height: 1.6 !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  font-family: Arial, sans-serif !important;
+  display: block !important;
+}
+
+/* 不同语言字幕的差异化样式（可选） */
+.custom-subtitle[data-language="zh"] {
+  color: #ffffff !important; /* 中文字幕白色 */
+}
+
+.custom-subtitle[data-language="ja"] {
+  color: #ffff00 !important; /* 日文字幕黄色 */
+}
+
+.custom-subtitle[data-language="en"] {
+  color: #00ff00 !important; /* 英文字幕绿色 */
+}
+
+/* 响应式自定义字幕样式 */
+@media (max-width: 768px) {
+  .custom-subtitle {
+    font-size: 22px !important;
+  }
+  
+  .custom-subtitles-container {
+    bottom: 30px !important;
+  }
+  
+  .subtitle-checkboxes {
+    gap: 12px;
+  }
+  
+  .subtitle-checkbox-item {
+    font-size: 13px;
+    padding: 6px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .custom-subtitle {
+    font-size: 20px !important;
+  }
+  
+  .custom-subtitles-container {
+    bottom: 25px !important;
+    width: 90% !important;
+    max-width: 90% !important;
+  }
+  
+  .subtitle-checkboxes {
+    gap: 8px;
+  }
+  
+  .subtitle-checkbox-item {
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+}
+
+/* 视频与字幕容器 - 用于进入全屏 */
+.video-with-subtitles {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   overflow: hidden;
+}
+
+/* 自定义全屏按钮样式 */
+.custom-fullscreen-btn {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  font-size: 16px;
+  z-index: 999;
+  transition: all 0.3s ease;
+}
+
+.custom-fullscreen-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.1);
+}
+
+.custom-fullscreen-btn:active {
+  transform: scale(0.95);
+}
+
+/* 全屏模式下的自定义全屏按钮 */
+.video-with-subtitles:fullscreen .custom-fullscreen-btn,
+.video-with-subtitles:-webkit-full-screen .custom-fullscreen-btn,
+.video-with-subtitles:-moz-full-screen .custom-fullscreen-btn,
+.video-with-subtitles:-ms-fullscreen .custom-fullscreen-btn {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  font-size: 20px;
+  z-index: 999;
+  transition: all 0.3s ease;
+}
+
+.video-with-subtitles:fullscreen .custom-fullscreen-btn:hover,
+.video-with-subtitles:-webkit-full-screen .custom-fullscreen-btn:hover,
+.video-with-subtitles:-moz-full-screen .custom-fullscreen-btn:hover,
+.video-with-subtitles:-ms-fullscreen .custom-fullscreen-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.1);
+}
+
+/* 确保视频元素在容器中正确显示 */
+.video-preview {
+  width: 100%;
+  max-width: 900px;
+  height: auto;
+  max-height: 75vh;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  background-color: #000;
+  overflow: visible;
+}
+
+/* 自定义字幕容器样式 */
+.custom-subtitles-container {
+  position: absolute !important;
+  bottom: 40px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 85% !important;
+  max-width: 85% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 1000 !important;
+  pointer-events: none !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* 修复全屏模式下的字幕显示问题 - 当整个视频容器进入全屏时 */
+.video-with-subtitles:fullscreen,
+.video-with-subtitles:-webkit-full-screen,
+.video-with-subtitles:-moz-full-screen,
+.video-with-subtitles:-ms-fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background-color: black !important;
+  overflow: hidden !important;
+  display: block !important;
+  z-index: 9999 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.video-with-subtitles:fullscreen .video-preview,
+.video-with-subtitles:-webkit-full-screen .video-preview,
+.video-with-subtitles:-moz-full-screen .video-preview,
+.video-with-subtitles:-ms-fullscreen .video-preview {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: black !important;
+  z-index: 1 !important;
+}
+
+/* 确保在各种全屏情况下，视频都能占满整个屏幕 */
+:fullscreen .video-with-subtitles .video-preview,
+:-webkit-full-screen .video-with-subtitles .video-preview,
+:-moz-full-screen .video-with-subtitles .video-preview,
+:-ms-fullscreen .video-with-subtitles .video-preview {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: black !important;
+  z-index: 1 !important;
+}
+
+.video-with-subtitles:fullscreen .custom-subtitles-container,
+.video-with-subtitles:-webkit-full-screen .custom-subtitles-container,
+.video-with-subtitles:-moz-full-screen .custom-subtitles-container,
+.video-with-subtitles:-ms-fullscreen .custom-subtitles-container {
+  position: absolute !important;
+  bottom: 60px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 85% !important;
+  max-width: 85% !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* 兼容浏览器全屏API的其他情况 */
+:fullscreen .video-with-subtitles,
+:-webkit-full-screen .video-with-subtitles,
+:-moz-full-screen .video-with-subtitles,
+:-ms-fullscreen .video-with-subtitles {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  background-color: black !important;
+}
+
+:fullscreen .video-preview,
+:-webkit-full-screen .video-preview,
+:-moz-full-screen .video-preview,
+:-ms-fullscreen .video-preview {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+:fullscreen .custom-subtitles-container,
+:-webkit-full-screen .custom-subtitles-container,
+:-moz-full-screen .custom-subtitles-container,
+:-ms-fullscreen .custom-subtitles-container {
+  position: absolute !important;
+  bottom: 60px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 85% !important;
+  max-width: 85% !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* 视频与字幕容器 */
+.video-with-subtitles {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 字幕样式优化 - 移除黑色背景 */
+/* 通用字幕样式 */
+video::cue,
+video::cue-text,
+video::cue:past,
+video::cue:future,
+video::cue:active {
+  /* 彻底移除背景 */
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  background-repeat: no-repeat !important;
+  background-position: 0 0 !important;
+  background-size: auto !important;
+  background-attachment: scroll !important;
+  background-blend-mode: normal !important;
+  background-clip: border-box !important;
+  background-origin: padding-box !important;
+  
+  /* 文字样式 */
+  color: white !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-family: Arial, sans-serif !important;
+  line-height: 1.5 !important;
+  text-align: center !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  white-space: normal !important;
+  direction: ltr !important;
+  unicode-bidi: normal !important;
+  box-decoration-break: slice !important;
+  
+  /* 其他样式 */
+  text-shadow: none !important;
+  padding: 2px 5px !important;
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  z-index: 9999 !important;
+}
+
+/* WebKit浏览器特定样式 - 针对字幕容器 */
+video::-webkit-media-text-track-container,
+video::-webkit-media-text-track-display,
+video::-webkit-media-text-track-background,
+video::-webkit-media-text-track-cue,
+video::-webkit-media-text-track-cue-region {
+  /* 彻底移除背景 */
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  background-repeat: no-repeat !important;
+  background-position: 0 0 !important;
+  background-size: auto !important;
+  background-attachment: scroll !important;
+  background-blend-mode: normal !important;
+  background-clip: border-box !important;
+  background-origin: padding-box !important;
+  
+  /* 其他样式 */
+  color: white !important;
+  text-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  z-index: 9999 !important;
+  
+  /* 定位和尺寸 */
+  position: relative !important;
+  bottom: auto !important;
+  top: auto !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  display: block !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+/* WebKit浏览器特定样式 - 针对单个字幕 */
+video::-webkit-media-text-track-cue {
+  display: inline-block !important;
+  /* 彻底移除背景 */
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  background-repeat: no-repeat !important;
+  background-position: 0 0 !important;
+  background-size: auto !important;
+  background-attachment: scroll !important;
+  background-blend-mode: normal !important;
+  background-clip: border-box !important;
+  background-origin: padding-box !important;
+  
+  /* 使用滤镜移除背景 */
+  filter: none !important;
+  -webkit-filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  
+  /* 文字样式 */
+  color: white !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  font-style: normal !important;
+  font-variant: normal !important;
+  font-stretch: normal !important;
+  font-family: Arial, sans-serif !important;
+  line-height: 1.5 !important;
+  text-align: center !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  white-space: normal !important;
+  direction: ltr !important;
+  unicode-bidi: normal !important;
+  box-decoration-break: slice !important;
+  
+  /* 其他样式 */
+  text-shadow: none !important;
+  padding: 2px 5px !important;
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  z-index: 9999 !important;
+  position: relative !important;
+  bottom: auto !important;
+  top: auto !important;
+  
+  /* 动画和过渡 */
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+  transition: none !important;
+  
+  /* 混合模式 */
+  mix-blend-mode: normal !important;
+  isolation: auto !important;
+  
+  /* 指针事件 */
+  pointer-events: none !important;
+  user-select: none !important;
+  
+  /* 轮廓 */
+  outline: none !important;
+  outline-offset: 0 !important;
+  
+  /* 边框 */
+  border: none !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+  
+  /* 列表样式 */
+  list-style: none !important;
+  list-style-type: none !important;
+  list-style-position: outside !important;
+  list-style-image: none !important;
+}
+
+/* 响应式字幕样式 */
+@media (max-width: 768px) {
+  /* 通用字幕样式 */
+  video::cue,
+  video::cue-text,
+  video::cue:past,
+  video::cue:future,
+  video::cue:active {
+    font-size: 14px !important;
+  }
+  
+  .subtitle-selector {
+    font-size: 13px;
+    gap: 8px;
+  }
+  
+  .subtitle-selector select {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  /* 通用字幕样式 */
+  video::cue,
+  video::cue-text,
+  video::cue:past,
+  video::cue:future,
+  video::cue:active {
+    font-size: 12px !important;
+    padding: 2px 5px !important;
+  }
+  
+  .subtitle-selector {
+    font-size: 12px;
+    gap: 6px;
+  }
+  
+  .subtitle-selector select {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+}
+
+/* 确保视频元素本身没有默认的字幕背景 */
+video {
+  /* 移除视频元素的默认字幕样式 */
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* 移除浏览器默认的字幕样式，确保字幕没有黑色背景，并且显示在底部 */
+video::cue,
+video::cue-text,
+video::cue:past,
+video::cue:future,
+video::cue:active {
+  /* 彻底移除背景 - 针对所有可能的背景属性 */
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  background-repeat: no-repeat !important;
+  background-position: 0 0 !important;
+  background-size: auto !important;
+  background-attachment: scroll !important;
+  background-blend-mode: normal !important;
+  background-clip: border-box !important;
+  background-origin: padding-box !important;
+  
+  /* 移除所有可能的装饰 */
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  
+  /* 文字样式 */
+  color: white !important;
+  font-size: 22px !important;
+  font-weight: 500 !important;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9) !important;
+  line-height: 1.6 !important;
+  font-family: Arial, sans-serif !important;
+  text-align: center !important;
+  
+  /* 确保字幕显示在底部，而不是顶端 */
+  display: inline !important;
+  position: relative !important;
+  vertical-align: bottom !important;
+}
+
+/* WebKit浏览器特定样式 - 针对字幕容器 */
+video::-webkit-media-text-track-container {
+  /* 确保字幕容器显示在底部，调整bottom值，避免超出视频预览框 */
+  position: absolute !important;
+  bottom: 40px !important; /* 减小bottom值，确保字幕在视频预览框内 */
+  left: 0 !important;
+  right: 0 !important;
+  top: auto !important;
+  width: 100% !important;
+  height: auto !important;
+  z-index: 1000 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* WebKit浏览器特定样式 - 针对字幕显示区域 */
+video::-webkit-media-text-track-display {
+  /* 确保字幕显示在底部 */
+  position: relative !important;
+  bottom: 0 !important;
+  top: auto !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  height: auto !important;
+  z-index: 1000 !important;
+  text-align: center !important;
+  display: block !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* WebKit浏览器特定样式 - 针对单个字幕 */
+video::-webkit-media-text-track-cue {
+  /* 彻底移除背景 - 针对所有可能的背景属性 */
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  background-repeat: no-repeat !important;
+  background-position: 0 0 !important;
+  background-size: auto !important;
+  background-attachment: scroll !important;
+  background-blend-mode: normal !important;
+  background-clip: border-box !important;
+  background-origin: padding-box !important;
+  
+  /* 移除所有可能的装饰 */
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  margin: 0 !important;
+  padding: 2px 10px !important; /* 只保留必要的内边距 */
+  
+  /* 文字样式 */
+  color: white !important;
+  font-size: 22px !important;
+  font-weight: 500 !important;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9) !important;
+  line-height: 1.6 !important;
+  font-family: Arial, sans-serif !important;
+  text-align: center !important;
+  
+  /* 确保字幕显示在底部 */
+  display: inline-block !important;
+  position: relative !important;
+  vertical-align: bottom !important;
+  margin: 0 auto !important;
+  width: auto !important;
+  max-width: 85% !important;
+  word-wrap: break-word !important;
+}
+
+/* 移除字幕背景 */
+video::-webkit-media-text-track-background {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  opacity: 0 !important;
+}
+
+/* 移除字幕区域样式 */
+video::-webkit-media-text-track-cue-region {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  opacity: 0 !important;
+  position: absolute !important;
+  bottom: 40px !important; /* 减小bottom值，确保字幕在视频预览框内 */
+  left: 0 !important;
+  right: 0 !important;
+  top: auto !important;
+  width: 100% !important;
+  height: auto !important;
+  z-index: 1000 !important;
+  text-align: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Firefox浏览器特定样式 */
+video::cue-region {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  opacity: 0 !important;
+  position: absolute !important;
+  bottom: 40px !important; /* 减小bottom值，确保字幕在视频预览框内 */
+  left: 0 !important;
+  right: 0 !important;
+  top: auto !important;
+  width: 100% !important;
+  height: auto !important;
+  z-index: 1000 !important;
+  text-align: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* 响应式样式 */
+@media (max-width: 768px) {
+  video::cue,
+  video::cue-text,
+  video::-webkit-media-text-track-cue {
+    font-size: 20px !important;
+  }
+  
+  video::-webkit-media-text-track-container,
+  video::cue-region {
+    bottom: 30px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  video::cue,
+  video::cue-text,
+  video::-webkit-media-text-track-cue {
+    font-size: 18px !important;
+  }
+  
+  video::-webkit-media-text-track-container,
+  video::cue-region {
+    bottom: 25px !important;
+  }
+}
+
+/* 全屏模式下的样式，确保字幕在全屏模式下正确显示 */
+video:fullscreen::cue,
+video:fullscreen::cue-text,
+video:fullscreen::cue:past,
+video:fullscreen::cue:future,
+video:fullscreen::cue:active {
+  font-size: 22px !important;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9) !important;
+}
+
+video:fullscreen::-webkit-media-text-track-container,
+video:fullscreen::cue-region {
+  bottom: 60px !important; /* 全屏模式下可以适当增大bottom值 */
+}
+
+video:-webkit-full-screen::cue,
+video:-webkit-full-screen::cue-text,
+video:-webkit-full-screen::-webkit-media-text-track-cue {
+  font-size: 22px !important;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9) !important;
+}
+
+video:-webkit-full-screen::-webkit-media-text-track-container {
+  bottom: 60px !important; /* 全屏模式下可以适当增大bottom值 */
+}
+
+/* 自定义字幕样式 */
+.custom-subtitle {
+  position: absolute;
+  bottom: 40px; /* 调整字幕位置，使其在视频预览框内 */
+  left: 50%;
+  transform: translateX(-50%);
+  background: transparent !important;
+  background-color: transparent !important;
+  color: white !important;
+  font-size: 24px !important;
+  font-weight: 500 !important;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9) !important;
+  text-align: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  z-index: 1000 !important;
+  width: 85% !important;
+  max-width: 85% !important;
+  word-wrap: break-word !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  line-height: 1.6 !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  font-family: Arial, sans-serif !important;
+}
+
+/* 响应式自定义字幕样式 */
+@media (max-width: 768px) {
+  .custom-subtitle {
+    font-size: 22px !important;
+    bottom: 30px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .custom-subtitle {
+    font-size: 20px !important;
+    bottom: 25px !important;
+  }
+}
+
+/* 全屏模式下的自定义字幕样式 - 多种情况适配 */
+/* 1. 当视频元素直接进入全屏时 */
+video:fullscreen + .custom-subtitles-container,
+video:-webkit-full-screen + .custom-subtitles-container,
+video:-moz-full-screen + .custom-subtitles-container,
+video:-ms-fullscreen + .custom-subtitles-container {
+  position: absolute !important;
+  bottom: 60px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 85% !important;
+  max-width: 85% !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* 2. 当视频元素直接进入全屏时，确保子元素（单个字幕）也正确显示 */
+video:fullscreen + .custom-subtitles-container .custom-subtitle,
+video:-webkit-full-screen + .custom-subtitles-container .custom-subtitle,
+video:-moz-full-screen + .custom-subtitles-container .custom-subtitle,
+video:-ms-fullscreen + .custom-subtitles-container .custom-subtitle {
+  font-size: 24px !important;
+  bottom: 60px !important;
+  position: relative !important;
+  z-index: 1000 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: transparent !important;
+  color: white !important;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9) !important;
+}
+
+/* 3. 当容器进入全屏时 */
+.video-preview-container:fullscreen .custom-subtitle,
+.video-preview-container:-webkit-full-screen .custom-subtitle,
+.video-preview-container:-moz-full-screen .custom-subtitle,
+.video-preview-container:-ms-fullscreen .custom-subtitle {
+  font-size: 24px !important;
+  bottom: 60px !important;
+}
+
+/* 4. 确保全屏模式下，字幕容器始终显示 */
+:fullscreen .custom-subtitles-container,
+:-webkit-full-screen .custom-subtitles-container,
+:-moz-full-screen .custom-subtitles-container,
+:-ms-fullscreen .custom-subtitles-container {
+  position: absolute !important;
+  bottom: 60px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 85% !important;
+  max-width: 85% !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  pointer-events: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* 5. 确保全屏模式下，单个字幕始终显示 */
+:fullscreen .custom-subtitle,
+:-webkit-full-screen .custom-subtitle,
+:-moz-full-screen .custom-subtitle,
+:-ms-fullscreen .custom-subtitle {
+  font-size: 24px !important;
+  bottom: 60px !important;
+  position: relative !important;
+  z-index: 1000 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: transparent !important;
+  color: white !important;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9) !important;
+}
+
+/* 移除所有可能的默认背景 */
+*::-webkit-media-text-track-container,
+*::-webkit-media-text-track-display,
+*::-webkit-media-text-track-background,
+*::-webkit-media-text-track-cue,
+*::-webkit-media-text-track-cue-region {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  background-repeat: no-repeat !important;
+  background-position: 0 0 !important;
+  background-size: auto !important;
+  background-attachment: scroll !important;
+  background-blend-mode: normal !important;
+  background-clip: border-box !important;
+  background-origin: padding-box !important;
+  
+  /* 移除边框和阴影 */
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .video-actions {

@@ -489,6 +489,11 @@
             <button id="volumeToggle" class="control-btn">
                 <i class="fas fa-volume-up"></i> 静音
             </button>
+            <div class="control-btn" style="padding: 0; background: none; box-shadow: none;">
+                <select id="subtitleSelect" style="padding: 14px 22px; border: none; border-radius: 30px; background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%); color: white; font-size: 15px; font-weight: 500; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,0.15);">
+                    <option value="">无字幕</option>
+                </select>
+            </div>
         </div>
 
         <div class="vlc-container">
@@ -560,6 +565,56 @@
             const volumeToggle = document.getElementById('volumeToggle');
             const vlcLaunchBtn = document.getElementById('vlcLaunchBtn');
             const copyUrlBtn = document.getElementById('copyUrlBtn');
+            const subtitleSelect = document.getElementById('subtitleSelect');
+            
+            // 获取视频字幕轨道信息
+            async function fetchSubtitles() {
+                try {
+                    const videoUrl = video.src;
+                    const filename = videoUrl.split('/video/')[1].split('?')[0];
+                    const response = await fetch(`/api/subtitles/${filename}?token={{ token }}`);
+                    const data = await response.json();
+                    
+                    if (data.has_subtitles && data.subtitles.length > 0) {
+                        // 清空现有选项
+                        subtitleSelect.innerHTML = '<option value="">无字幕</option>';
+                        
+                        // 添加字幕轨道选项
+                        data.subtitles.forEach(subtitle => {
+                            const option = document.createElement('option');
+                            option.value = subtitle.index;
+                            option.textContent = `${subtitle.title} (${subtitle.language})`;
+                            subtitleSelect.appendChild(option);
+                        });
+                    }
+                } catch (error) {
+                    console.error('获取字幕信息失败:', error);
+                }
+            }
+            
+            // 调用获取字幕函数
+            fetchSubtitles();
+            
+            // 字幕选择事件
+            subtitleSelect.addEventListener('change', function() {
+                const subtitleIndex = this.value;
+                const videoUrl = video.src;
+                const baseUrl = videoUrl.split('?')[0];
+                const token = videoUrl.split('token=')[1];
+                
+                // 更新视频源，添加字幕参数
+                if (subtitleIndex) {
+                    video.src = `${baseUrl}?token=${token}&subtitle=${subtitleIndex}`;
+                } else {
+                    video.src = `${baseUrl}?token=${token}`;
+                }
+                
+                // 重新加载视频
+                const currentTime = video.currentTime;
+                video.load();
+                video.currentTime = currentTime;
+                video.play();
+            });
 
             // 播放/暂停按钮
             playPauseBtn.addEventListener('click', function() {

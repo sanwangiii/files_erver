@@ -410,6 +410,50 @@ def detect_encoding(file_path):
         return 'gb2312'  # 默认使用GB2312
 
 
+def get_video_subtitles(file_path):
+    """获取视频文件的内嵌字幕轨道信息"""
+    import subprocess
+    import json
+    
+    try:
+        # 使用ffprobe获取视频流信息，包括字幕轨道
+        cmd = [
+            'ffprobe',
+            '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_format',
+            '-show_streams',
+            str(file_path)
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        
+        # 提取字幕轨道信息
+        subtitles = []
+        for stream in data.get('streams', []):
+            if stream.get('codec_type') == 'subtitle':
+                subtitle_info = {
+                    'index': stream.get('index'),
+                    'codec_name': stream.get('codec_name'),
+                    'codec_long_name': stream.get('codec_long_name'),
+                    'language': stream.get('tags', {}).get('language', 'unknown'),
+                    'title': stream.get('tags', {}).get('title', f'字幕轨道 {stream.get("index")}')
+                }
+                subtitles.append(subtitle_info)
+        
+        return subtitles
+    except subprocess.CalledProcessError as e:
+        logger.error(f"FFprobe命令执行失败: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        logger.error(f"解析FFprobe输出失败: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"获取字幕轨道信息失败: {e}")
+        return []
+
+
 # 缓存字典，用于存储目录的文件列表，格式：{directory_path: (timestamp, files_list)}
 file_cache = {}
 
@@ -937,6 +981,80 @@ def api_preview_text(filename):
         'formatted_mtime': formatted_mtime
     })
 
+
+@app.route('/api/subtitles/<path:filename>')
+@require_auth
+def api_get_subtitles(filename):
+    """API端点，返回视频文件的内嵌字幕轨道信息"""
+    # 文件名已经是URL编码格式
+    decoded_filename = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+
+    if not file_path.exists() or not file_path.is_file():
+        return jsonify({'error': '文件不存在'}), 404
+
+    # 获取文件扩展名
+    file_ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
+
+    # 检查是否为视频文件
+    if file_ext not in VIDEO_EXTENSIONS:
+        return jsonify({'error': '不是视频文件'}), 400
+
+    # 获取字幕轨道信息
+    subtitles = get_video_subtitles(file_path)
+
+    return jsonify({
+        'filename': filename,
+        'file_title': file_path.name,
+        'file_path': decoded_filename,
+        'subtitles': subtitles,
+        'has_subtitles': len(subtitles) > 0
+    })
+
+@app.route('/api/subtitle_content/<path:filename>')
+@require_auth
+def api_get_subtitle_content(filename):
+    """API端点，返回视频文件的字幕内容"""
+    # 文件名已经是URL编码格式
+    decoded_filename = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+    subtitle_index = request.args.get('index', type=int)
+
+    if not file_path.exists() or not file_path.is_file():
+        return jsonify({'error': '文件不存在'}), 404
+
+    # 获取文件扩展名
+    file_ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
+
+    # 检查是否为视频文件
+    if file_ext not in VIDEO_EXTENSIONS:
+        return jsonify({'error': '不是视频文件'}), 400
+
+    # 检查是否提供了字幕索引
+    if subtitle_index is None:
+        return jsonify({'error': '缺少字幕索引参数'}), 400
+
+    try:
+        # 使用ffmpeg提取字幕内容，简化命令
+        cmd = [
+            'ffmpeg',
+            '-i', str(file_path),
+            '-map', f'0:{subtitle_index}',
+            '-f', 'webvtt',
+            '-'  # 输出到标准输出
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        
+        # 直接返回WebVTT内容，不添加额外样式
+        return result.stdout, 200, {'Content-Type': 'text/vtt'}
+    except subprocess.CalledProcessError as e:
+        logger.error(f"FFmpeg提取字幕失败: {e}")
+        return jsonify({'error': '提取字幕失败'}), 500
+    except Exception as e:
+        logger.error(f"获取字幕内容失败: {e}")
+        return jsonify({'error': '获取字幕内容失败'}), 500
+
 @app.route('/preview_text/<path:filename>')
 @require_auth
 def preview_text(filename):
@@ -1018,7 +1136,10 @@ def serve_video(filename):
         return "文件不存在", 404
 
     file_ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
-
+    
+    # 获取字幕参数
+    subtitle_index = request.args.get('subtitle')
+    
     # 处理视频文件的字节范围请求
     if file_ext in VIDEO_EXTENSIONS:
         range_header = request.headers.get('Range', None)
@@ -1031,31 +1152,80 @@ def serve_video(filename):
                 start = int(match.group(1))
                 end = int(match.group(2)) if match.group(2) else file_size - 1
                 length = end - start + 1
+                
+                # 如果没有选择字幕，使用常规文件读取
+                if not subtitle_index:
+                    # 创建部分响应
+                    def generate():
+                        with open(file_path, 'rb') as f:
+                            f.seek(start)
+                            remaining = length
+                            while remaining > 0:
+                                # 增加缓冲块大小以提高大文件处理性能
+                                chunk_size = min(1024 * 1024, remaining)  # 使用1MB缓冲
+                                data = f.read(chunk_size)
+                                if not data:
+                                    break
+                                remaining -= len(data)
+                                yield data
 
-                # 创建部分响应
-                def generate():
-                    with open(file_path, 'rb') as f:
-                        f.seek(start)
-                        remaining = length
-                        while remaining > 0:
-                            # 增加缓冲块大小以提高大文件处理性能
-                            chunk_size = min(1024 * 1024, remaining)  # 使用1MB缓冲
-                            data = f.read(chunk_size)
+                    response = app.response_class(
+                        generate(),
+                        status=206,
+                        mimetype=mimetypes.guess_type(file_path)[0],
+                        direct_passthrough=True
+                    )
+                    response.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+                    response.headers['Content-Length'] = str(length)
+                    response.headers['Accept-Ranges'] = 'bytes'
+                    return response
+                else:
+                    # 使用FFmpeg生成包含字幕的视频流
+                    import subprocess
+                    
+                    # 构建FFmpeg命令
+                    cmd = [
+                        'ffmpeg',
+                        '-i', str(file_path),
+                        '-ss', str(start / file_size),  # 开始时间（秒）
+                        '-t', str(length / file_size),  # 持续时间（秒）
+                        '-map', '0:v:0',  # 视频流
+                        '-map', f'0:s:{subtitle_index}',  # 选择的字幕流
+                        '-c:v', 'copy',  # 视频流复制
+                        '-c:s', 'mov_text',  # 字幕编码
+                        '-f', 'mp4',  # 输出格式
+                        '-movflags', 'frag_keyframe+empty_moov',  # 适合流媒体的MP4格式
+                        '-'  # 输出到标准输出
+                    ]
+                    
+                    # 执行FFmpeg命令
+                    process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        bufsize=1024 * 1024  # 1MB缓冲
+                    )
+                    
+                    # 生成响应数据
+                    def generate_ffmpeg():
+                        while True:
+                            data = process.stdout.read(1024 * 1024)  # 读取1MB数据
                             if not data:
                                 break
-                            remaining -= len(data)
                             yield data
-
-                response = app.response_class(
-                    generate(),
-                    status=206,
-                    mimetype=mimetypes.guess_type(file_path)[0],
-                    direct_passthrough=True
-                )
-                response.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
-                response.headers['Content-Length'] = str(length)
-                response.headers['Accept-Ranges'] = 'bytes'
-                return response
+                        process.stdout.close()
+                        process.wait()
+                    
+                    response = app.response_class(
+                        generate_ffmpeg(),
+                        status=206,
+                        mimetype='video/mp4',
+                        direct_passthrough=True
+                    )
+                    response.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+                    response.headers['Content-Length'] = str(length)
+                    response.headers['Accept-Ranges'] = 'bytes'
+                    return response
 
     # 完整文件响应
     return send_file(
