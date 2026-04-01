@@ -3,12 +3,12 @@
     {
       "id": 1,
       "username": "sanwangi",
-      "password": "1ddc7dc8",
+      "password": "18b42088",
       "isAdmin": true,
       "permissions": [
         "*"
       ],
-      "token": "sanwangi-token-1766159851"
+      "token": "sanwangi-token-1774877708"
     },
     {
       "id": 2,

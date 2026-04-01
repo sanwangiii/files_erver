@@ -6,6 +6,7 @@ import Admin from './components/Admin'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import FavoriteList from './components/FavoriteList'
+import ImageWaterfall from './components/ImageWaterfall'
 
 // 基础URL使用空字符串，这样会使用相对路径，从而利用Vite的代理配置
 const BASE_URL = '';
@@ -183,8 +184,8 @@ function App() {
         window.history.replaceState(null, '', `/files?${newSearchParams.toString()}`)
       }
       
-      if (path === '/files' || path === '/preview') {
-        // /files和/preview路径已经是正确的，不需要修改
+      if (path === '/files' || path === '/preview' || path === '/waterfall') {
+        // /files、/preview和/waterfall路径已经是正确的，不需要修改
         return
       } else if (path !== '/') {
         // 其他路径转换为/files路径
@@ -300,6 +301,10 @@ function App() {
     
     if (path === '/preview') {
       return <Preview />
+    }
+    
+    if (path === '/waterfall') {
+      return <ImageWaterfall />
     }
     
     if (currentUser.isAdmin) {

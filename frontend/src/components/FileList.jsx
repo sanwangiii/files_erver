@@ -41,6 +41,10 @@ const FileList = () => {
       // 从URL查询参数中获取dir值
       const searchParams = new URLSearchParams(window.location.search);
       const dir = searchParams.get('dir') || '';
+      console.log('=== URL变化 ===');
+      console.log('当前路径:', window.location.pathname);
+      console.log('搜索参数:', window.location.search);
+      console.log('解析的dir参数:', dir);
       setCurrentPath(dir);
     };
 
@@ -292,6 +296,26 @@ const FileList = () => {
       setAlertMessage('暂不支持该类型文件的预览');
       setShowAlert(true);
     }
+  }
+  
+  // 处理瀑布预览
+  const handleWaterfallPreview = () => {
+    // 跳转到瀑布预览页面
+    const searchParams = new URLSearchParams()
+    searchParams.set('path', currentPath)
+    const waterfallUrl = `/waterfall?${searchParams.toString()}`
+    
+    console.log('=== 瀑布预览按钮点击 ===');
+    console.log('当前路径:', currentPath);
+    console.log('构建的瀑布预览URL:', waterfallUrl);
+    console.log('完整URL:', window.location.origin + waterfallUrl);
+    
+    // 保存当前滚动位置
+    const scrollPosition = window.scrollY
+    sessionStorage.setItem('scrollPosition', scrollPosition.toString())
+    
+    // 使用传统的页面跳转方式
+    window.location.href = waterfallUrl
   }
   
 
@@ -599,6 +623,11 @@ const FileList = () => {
             返回上一级
           </button>
         )}
+        
+        {/* 瀑布预览按钮 */}
+        <button className="btn btn-secondary" onClick={handleWaterfallPreview}>
+          <i className="fa-solid fa-images"></i> 瀑布预览
+        </button>
         
         {/* 文件上传按钮 */}
         {hasUploadPermission() && (
