@@ -89,6 +89,7 @@ function FavoriteList() {
       
       {favoriteFiles.length === 0 ? (
         <div className="empty-favorites">
+          <i className="fa-regular fa-star" style={{ fontSize: '48px', color: '#ddd', marginBottom: '16px' }}></i>
           <h3>暂无收藏文件</h3>
           <p>您可以在文件列表中点击"收藏"按钮来添加文件到收藏列表</p>
         </div>

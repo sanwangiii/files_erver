@@ -17,19 +17,19 @@ export default defineConfig({
       },
       // 代理其他API路径
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:3002',
         changeOrigin: true
       },
       '/preview_text': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:3002',
         changeOrigin: true
       },
       '/video': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:3002',
         changeOrigin: true
       },
       '/file': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:3002',
         changeOrigin: true
       }
     }

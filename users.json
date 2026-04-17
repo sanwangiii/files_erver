@@ -3,7 +3,7 @@
     {
       "id": 1,
       "username": "sanwangi",
-      "password": "18b42088",
+      "password": "$2b$12$bnyW0FHweT9uPQvUZ2IH/uGOmSW0msl1puDnvefllwRGAJVTLu.KG",
       "isAdmin": true,
       "permissions": [
         "*"
@@ -13,7 +13,7 @@
     {
       "id": 2,
       "username": "liu",
-      "password": "56760663",
+      "password": "$2b$10$HXeheJE2qxBdWyKVjYVqKuObPuG8AN6aRBl6n.bFzpVJVZFwWVCSO",
       "isAdmin": false,
       "permissions": [
         "动漫",

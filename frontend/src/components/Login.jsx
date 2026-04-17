@@ -1,46 +1,6 @@
 import React, { useState, useContext, useEffect, useCallback } from 'react'
 import { AuthContext } from '../App'
 
-// 简单的MD5哈希函数（用于演示，实际项目应使用更安全的哈希算法）
-const md5 = (str) => {
-  let hash = 0;
-  if (str.length === 0) return hash;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash).toString(16);
-}
-
-// 默认用户数据常量
-const DEFAULT_USERS = [
-  {
-    id: 1,
-    username: 'admin',
-    password: md5('admin123'), // 哈希后的密码
-    isAdmin: true,
-    permissions: ['*'], // 管理员可以访问所有文件夹
-    token: 'admin-token' // 模拟认证token
-  },
-  {
-    id: 2,
-    username: 'user3',
-    password: md5('user123'), // 哈希后的密码
-    isAdmin: false,
-    permissions: [''], // 给普通用户添加根目录权限
-    token: 'user1-token' // 模拟认证token
-  },
-  {
-    id: 3,
-    username: 'user2',
-    password: md5('user123'), // 哈希后的密码
-    isAdmin: false,
-    permissions: [''], // 给普通用户添加根目录权限
-    token: 'user2-token' // 模拟认证token
-  }
-]
-
 function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -77,7 +37,7 @@ function Login() {
         },
         body: JSON.stringify({
           username: username,
-          password: md5(password) // 使用哈希后的密码
+          password: password
         })
       })
 

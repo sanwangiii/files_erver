@@ -75,7 +75,7 @@ function Preview() {
           const videoUrl = `/video/${encodeURIComponent(params.path)}?token=${token}`
           // 由于浏览器会自动处理代理，所以VLC URL需要使用完整的HTTP URL
           const hostname = window.location.hostname
-          const backendPort = 8000
+          const backendPort = 3002
           const fullVideoUrl = `http://${hostname}:${backendPort}/video/${encodeURIComponent(params.path)}?token=${token}`
           vlcProtocolUrl = `vlc://${fullVideoUrl}`
         }
@@ -569,7 +569,7 @@ function Preview() {
       {/* 预览头部 */}
       <div className="preview-header">
         <button className="back-btn" onClick={goBack}>
-          <i className="fas fa-arrow-left"></i> 返回
+          <i className="fas fa-arrow-left"></i> <span className="back-btn-text">返回</span>
         </button>
         <h1 className="preview-title">{previewFile?.name || '文件预览'}</h1>
       </div>
@@ -622,7 +622,6 @@ function Preview() {
                     {selectedSubtitles.map((subtitleIndex) => {
                       const subtitleText = currentCues[subtitleIndex]
                       if (subtitleText) {
-                        // 找到对应的字幕轨道信息
                         const subtitleInfo = subtitles.find(sub => sub.index === subtitleIndex)
                         return (
                           <div 
@@ -638,7 +637,6 @@ function Preview() {
                       return null
                     })}
                   </div>
-
                 </div>
                 
                 {/* 字幕选择器 - 支持多选 */}
@@ -655,25 +653,18 @@ function Preview() {
                             onChange={(e) => {
                               const isChecked = e.target.checked
                               const subtitleIndex = parseInt(e.target.value)
-                              console.log(`字幕轨道 ${subtitleIndex} ${isChecked ? '选中' : '取消选中'}`)
                                
                               let newSelectedSubtitles
                               if (isChecked) {
-                                // 添加到选中列表
                                 newSelectedSubtitles = [...selectedSubtitles, subtitleIndex]
-                                // 加载新选中的字幕轨道，从previewFile获取文件路径
                                 if (previewFile?.path) {
                                   loadSubtitle(subtitleIndex, previewFile.path)
-                                } else {
-                                  console.error('文件路径不存在，无法加载字幕轨道:', subtitleIndex)
                                 }
                               } else {
-                                // 从选中列表中移除
                                 newSelectedSubtitles = selectedSubtitles.filter(index => index !== subtitleIndex)
                               }
                               
                               setSelectedSubtitles(newSelectedSubtitles)
-                              console.log('当前选中的字幕轨道:', newSelectedSubtitles)
                             }}
                           />
                           <span className="subtitle-checkbox-label">

@@ -1,17 +1,5 @@
 import React, { useState, useEffect } from 'react'
 
-// 简单的MD5哈希函数（用于演示，实际项目应使用更安全的哈希算法）
-const md5 = (str) => {
-  let hash = 0;
-  if (str.length === 0) return hash;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash).toString(16);
-}
-
 function Admin() {
   const [users, setUsers] = useState([])
   const [newUser, setNewUser] = useState({
@@ -84,7 +72,12 @@ function Admin() {
   // 从后端加载用户数据
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/users')
+      const user = JSON.parse(localStorage.getItem('user'))
+      const response = await fetch('/api/users', {
+        headers: {
+          'Authorization': `Bearer ${user?.token || ''}`
+        }
+      })
       if (response.ok) {
         const data = await response.json()
         setUsers(data.users)
@@ -108,17 +101,15 @@ function Admin() {
     e.preventDefault()
     
     try {
-      // 哈希密码
-      const hashedPassword = md5(newUser.password)
-      
+      const currentUser = JSON.parse(localStorage.getItem('user'))
       const response = await fetch('/api/users', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentUser?.token || ''}`
         },
         body: JSON.stringify({
-          ...newUser,
-          password: hashedPassword
+          ...newUser
         })
       })
 
@@ -156,27 +147,18 @@ function Admin() {
       // 准备要更新的数据
       const updateData = { ...editingUser }
       
-      // 检查原始用户数据，只在密码被修改时才更新密码
-      const originalUser = users.find(user => user.id === editingUser.id)
-      
       // 如果密码为空，不更新密码
       if (updateData.password === '') {
-        // 删除密码字段，不更新密码
-        delete updateData.password
-      } else if (updateData.password !== originalUser.password) {
-        // 密码被修改，哈希新密码
-        if (updateData.password.length < 32) { // 假设md5哈希是32位
-          updateData.password = md5(updateData.password)
-        }
-      } else {
-        // 密码未修改，不更新密码
         delete updateData.password
       }
+      // 密码不为空则发原始密码，后端负责哈希
       
+      const currentUser = JSON.parse(localStorage.getItem('user'))
       const response = await fetch(`/api/users/${editingUser.id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentUser?.token || ''}`
         },
         body: JSON.stringify(updateData)
       })
@@ -219,8 +201,12 @@ function Admin() {
     // 确认删除
     if (window.confirm('确定要删除此用户吗？')) {
       try {
+        const currentUser = JSON.parse(localStorage.getItem('user'))
         const response = await fetch(`/api/users/${userId}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${currentUser?.token || ''}`
+          }
         })
 
         if (response.ok) {
@@ -361,7 +347,8 @@ function Admin() {
       )}
 
       <div className="user-list">
-        <table>
+        {/* 桌面端表格 */}
+        <table className="user-table-desktop">
           <thead>
             <tr>
               <th>ID</th>
@@ -397,6 +384,39 @@ function Admin() {
             ))}
           </tbody>
         </table>
+        {/* 移动端卡片列表 */}
+        <div className="user-cards-mobile">
+          {users.map(user => (
+            <div key={user.id} className="user-card-item">
+              <div className="user-card-header">
+                <span className="user-card-name">{user.username}</span>
+                <span className={`user-card-role ${user.isAdmin ? 'role-admin' : 'role-user'}`}>
+                  {user.isAdmin ? '管理员' : '普通用户'}
+                </span>
+              </div>
+              <div className="user-card-body">
+                <div className="user-card-field">
+                  <span className="user-card-label">ID:</span>
+                  <span>{user.id}</span>
+                </div>
+                <div className="user-card-field">
+                  <span className="user-card-label">权限:</span>
+                  <span className="user-card-permissions">
+                    {loading ? '加载中...' : (user.permissions.length > 0 ? user.permissions.join(', ') : '无')}
+                  </span>
+                </div>
+              </div>
+              <div className="user-card-actions">
+                <button className="btn" onClick={() => handleEditUser(user)}>
+                  编辑
+                </button>
+                <button className="btn btn-secondary" onClick={() => handleDeleteUser(user.id)}>
+                  删除
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {editingUser && (

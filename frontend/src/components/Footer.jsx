@@ -1,9 +1,10 @@
 import React from 'react'
 
 function Footer() {
+  const currentYear = new Date().getFullYear()
   return (
     <footer className="footer">
-      <p>© 2024 文件预览服务器 - 所有权利保留</p>
+      <p>© {currentYear} 文件预览服务器</p>
     </footer>
   )
 }

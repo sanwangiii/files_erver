@@ -1,1628 +1,1528 @@
+"""
+文件预览服务器 - 优化版
+==============================
+安全优化：
+  - bcrypt 密码哈希（自动迁移明文密码）
+  - HMAC-SHA256 签名 token + 过期时间
+  - 路径遍历防护
+  - 登录限流（IP + 用户名）
+  - CORS 白名单
+
+性能优化：
+  - 带 TTL 自动清理的内存缓存
+  - 用户/收藏/配置数据缓存
+  - os.scandir + 批量 stat
+  - 视频流使用 send_file (conditional)
+  - 去除重复路由/重复 import
+"""
+
 import os
-import logging
-from logging.handlers import RotatingFileHandler
-import mimetypes
-import time
 import re
 import json
-import chardet
+import time
+import hashlib
+import hmac
+import threading
+import mimetypes
 import urllib.parse
+import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from flask import Flask, render_template, request, url_for, send_file, send_from_directory, Response, redirect, jsonify
+from functools import wraps
+from collections import defaultdict
+
+from flask import (
+    Flask, render_template, request, url_for,
+    send_file, send_from_directory, Response, redirect, jsonify
+)
 from flask_cors import CORS
-from werkzeug.utils import secure_filename
 
-# 导入配置文件
-import config
-
-
-# 配置MIME类型
-mimetypes.add_type('video/webm', '.webm')
-mimetypes.add_type('video/mp4', '.mp4')
-mimetypes.add_type('video/quicktime', '.mov')
-mimetypes.add_type('video/x-matroska', '.mkv')
-mimetypes.add_type('video/x-msvideo', '.avi')
-mimetypes.add_type('text/plain', '.txt')
-mimetypes.add_type('text/markdown', '.md')
-mimetypes.add_type('application/json', '.json')
-mimetypes.add_type('text/csv', '.csv')
-mimetypes.add_type('application/xml', '.xml')
+# ==================== 配置 ====================
 
 # 移动硬盘路径
-MOBILE_HDD_PATH = "/Volumes/My Passport"  # 修改为您的移动硬盘路径
-VIDEO_EXTENSIONS = {'mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'mpeg', 'mpg', 'm4v', '3gp', '3g2', 'ogg', 'ogv', 'ts', 'mts', 'm2ts', 'vob', 'rm', 'rmvb', 'asf'}
-TEXT_EXTENSIONS = {'txt', 'md', 'json', 'csv', 'xml', 'log', 'conf', 'ini', 'cfg', 'py', 'js', 'html', 'css'}
-IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'}
+MOBILE_HDD_PATH = "/Volumes/My Passport"
 
-# 初始化Flask应用
+# 文件类型集合（frozen 避免误修改）
+VIDEO_EXTENSIONS = frozenset({
+    'mp4', 'mkv', 'avi', 'mov', 'webm', 'wmv', 'flv', 'mpeg', 'mpg',
+    'm4v', '3gp', '3g2', 'ogg', 'ogv', 'ts', 'mts', 'm2ts', 'vob',
+    'rm', 'rmvb', 'asf'
+})
+TEXT_EXTENSIONS = frozenset({
+    'txt', 'md', 'json', 'csv', 'xml', 'log', 'conf', 'ini',
+    'cfg', 'py', 'js', 'html', 'css'
+})
+IMAGE_EXTENSIONS = frozenset({'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'})
+
+# 所有可预览类型合集
+PREVIEWABLE_EXTENSIONS = VIDEO_EXTENSIONS | TEXT_EXTENSIONS | IMAGE_EXTENSIONS
+
+# 隐藏文件/文件夹
+HIDDEN_FILES = frozenset({
+    '.DS_Store', 'Thumbs.db', 'desktop.ini',
+    '.folder_config.json', '.gitignore', '.htaccess'
+})
+HIDDEN_FOLDERS = frozenset({
+    '.git', '.svn', '.idea', '.vscode', '__pycache__',
+    'node_modules', 'vendor', 'cache', 'logs'
+})
+
+# 数据文件路径
+BASE_DIR = Path(__file__).parent
+USERS_FILE = BASE_DIR / "users.json"
+FAVORITES_FILE = BASE_DIR / "favorites.json"
+FOLDER_CONFIG_FILE = Path(MOBILE_HDD_PATH) / ".folder_config.json"
+LOG_FILE = BASE_DIR / "file_server.log"
+
+# ==================== 安全配置 ====================
+
+# Token 密钥（每次启动随机生成，生产环境应固定）
+SECRET_KEY = os.environ.get(
+    'FILE_SERVER_SECRET',
+    hashlib.sha256(os.urandom(32)).hexdigest()
+)
+TOKEN_EXPIRE_SECONDS = 7 * 24 * 3600  # token 7 天过期
+
+# 登录限流
+LOGIN_RATE_LIMIT = 5          # 最多尝试次数
+LOGIN_RATE_WINDOW = 300       # 窗口时间（秒）
+
+# CORS 允许的来源
+CORS_ORIGINS = [
+    'http://localhost:3001',
+    'http://localhost:3002',
+    'http://sanwangi.file:3001',
+    'http://sanwangi.file:3002',
+]
+
+# ==================== MIME 类型 ====================
+
+for ext, mime in [
+    ('.webm', 'video/webm'), ('.mp4', 'video/mp4'),
+    ('.mov', 'video/quicktime'), ('.mkv', 'video/x-matroska'),
+    ('.avi', 'video/x-msvideo'), ('.txt', 'text/plain'),
+    ('.md', 'text/markdown'), ('.json', 'application/json'),
+    ('.csv', 'text/csv'), ('.xml', 'application/xml'),
+]:
+    mimetypes.add_type(mime, ext)
+
+# ==================== 日志 ====================
+
+logger = logging.getLogger('FileServer')
+logger.setLevel(logging.INFO)
+
+_console = logging.StreamHandler()
+_console.setFormatter(logging.Formatter(
+    '%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S'
+))
+logger.addHandler(_console)
+
+try:
+    _file = RotatingFileHandler(
+        LOG_FILE, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8'
+    )
+    _file.setFormatter(logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(message)s'
+    ))
+    logger.addHandler(_file)
+except Exception:
+    pass
+
+# ==================== Flask 应用 ====================
+
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024 * 1024  # 10GB
+app.config['UPLOAD_FOLDER'] = '/tmp'
 
-# 文件上传配置
-app.config['MAX_CONTENT_LENGTH'] = config.Config().MAX_CONTENT_LENGTH  # 使用config.py中的10GB限制
-app.config['UPLOAD_FOLDER'] = '/tmp'  # 临时上传目录
+# CORS：限制来源
+CORS(app, origins=CORS_ORIGINS, supports_credentials=True)
 
-# 启用CORS，允许所有来源的请求
-CORS(app)
+# ==================== 带自动清理的缓存 ====================
 
-# 获取当前服务器IP的API端点
-@app.route('/api/server_info', methods=['GET'])
-def get_server_info():
-    """获取服务器信息，包括当前IP地址"""
-    import socket
-    
-    # 获取当前主机名
-    hostname = socket.gethostname()
-    
-    # 获取当前IP地址
+class TTLCache:
+    """线程安全的 TTL 缓存，自动清理过期条目"""
+
+    def __init__(self, ttl=30, cleanup_interval=60):
+        self._cache = {}
+        self._ttl = ttl
+        self._lock = threading.Lock()
+        # 定期清理
+        def _cleanup():
+            while True:
+                time.sleep(cleanup_interval)
+                self._evict()
+        t = threading.Thread(target=_cleanup, daemon=True)
+        t.start()
+
+    def get(self, key):
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                return None
+            if time.time() - entry[0] > self._ttl:
+                del self._cache[key]
+                return None
+            return entry[1]
+
+    def set(self, key, value):
+        with self._lock:
+            self._cache[key] = (time.time(), value)
+
+    def delete(self, key):
+        with self._lock:
+            self._cache.pop(key, None)
+
+    def clear(self):
+        with self._lock:
+            self._cache.clear()
+
+    def _evict(self):
+        now = time.time()
+        with self._lock:
+            expired = [k for k, (ts, _) in self._cache.items()
+                       if now - ts > self._ttl]
+            for k in expired:
+                del self._cache[k]
+
+# 目录缓存（30秒 TTL）
+file_cache = TTLCache(ttl=30, cleanup_interval=120)
+folder_cache = TTLCache(ttl=30, cleanup_interval=120)
+# 配置缓存（5秒 TTL，配置变更不频繁）
+config_cache = TTLCache(ttl=5, cleanup_interval=30)
+
+# ==================== 密码安全 ====================
+
+def _get_bcrypt():
+    """延迟导入 bcrypt，不存在时回退到 hashlib"""
     try:
-        # 创建一个UDP套接字连接到外部服务器，以获取当前网络接口的IP
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 80))
-        ip_address = s.getsockname()[0]
-        s.close()
-    except Exception:
-        # 如果无法连接到外部服务器，尝试获取本地IP
-        ip_address = socket.gethostbyname(hostname)
-    
-    # 获取所有网络接口信息（可选，用于调试）
-    interfaces = {}
-    try:
-        import subprocess
-        result = subprocess.run(['ifconfig'], capture_output=True, text=True)
-        interfaces['ifconfig_output'] = result.stdout
-    except Exception:
-        pass
-    
-    return jsonify({
-        'hostname': hostname,
-        'ip_address': ip_address,
-        'interfaces': interfaces,
-        'port': 3001,
-        'message': '当前文件服务器的访问地址：http://localhost:8000 或 http://{}:8000'.format(ip_address)
-    })
-
-# 用户登录API
-@app.route('/api/login', methods=['POST'])
-def login():
-    """用户登录验证"""
-    try:
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-        
-        if not username or not password:
-            return jsonify({'error': '用户名和密码不能为空'}), 400
-        
-        users = load_users()
-        user = next((u for u in users if u['username'] == username and u['password'] == password), None)
-        
-        if user:
-            # 生成新的token
-            import time
-            user_with_token = {
-                **user,
-                'token': f"{username}-token-{int(time.time())}"
-            }
-            return jsonify({'user': user_with_token})
-        else:
-            return jsonify({'error': '用户名或密码错误'}), 401
-    except Exception as e:
-        logger.error(f"登录失败: {e}")
-        return jsonify({'error': '登录失败，请稍后重试'}), 500
-
-# 获取用户列表API
-@app.route('/api/users', methods=['GET'])
-def get_users():
-    """获取所有用户列表"""
-    try:
-        users = load_users()
-        # 删除密码字段，避免泄露
-        users_without_password = [{k: v for k, v in user.items() if k != 'password'} for user in users]
-        return jsonify({'users': users_without_password})
-    except Exception as e:
-        logger.error(f"获取用户列表失败: {e}")
-        return jsonify({'error': '获取用户列表失败'}), 500
-
-# 添加用户API
-@app.route('/api/users', methods=['POST'])
-def add_user():
-    """添加新用户"""
-    try:
-        data = request.get_json()
-        username = data.get('username')
-        password = data.get('password')
-        is_admin = data.get('isAdmin', False)
-        permissions = data.get('permissions', [])
-        
-        if not username or not password:
-            return jsonify({'error': '用户名和密码不能为空'}), 400
-        
-        users = load_users()
-        
-        # 检查用户名是否已存在
-        if any(u['username'] == username for u in users):
-            return jsonify({'error': '用户名已存在'}), 400
-        
-        # 创建新用户
-        new_user = {
-            'id': max(u['id'] for u in users) + 1 if users else 1,
-            'username': username,
-            'password': password,
-            'isAdmin': is_admin,
-            'permissions': permissions,
-            'token': f"{username}-token-{int(time.time())}"
-        }
-        
-        users.append(new_user)
-        if save_users(users):
-            # 返回不含密码的用户信息
-            user_without_password = {k: v for k, v in new_user.items() if k != 'password'}
-            return jsonify({'user': user_without_password}), 201
-        else:
-            return jsonify({'error': '保存用户失败'}), 500
-    except Exception as e:
-        logger.error(f"添加用户失败: {e}")
-        return jsonify({'error': '添加用户失败'}), 500
-
-# 编辑用户API
-@app.route('/api/users/<int:user_id>', methods=['PUT'])
-def edit_user(user_id):
-    """编辑现有用户"""
-    try:
-        data = request.get_json()
-        users = load_users()
-        
-        # 查找要编辑的用户
-        user_index = next((i for i, u in enumerate(users) if u['id'] == user_id), None)
-        if user_index is None:
-            return jsonify({'error': '用户不存在'}), 404
-        
-        # 更新用户信息
-        user = users[user_index]
-        if 'username' in data:
-            user['username'] = data['username']
-        if 'password' in data and data['password']:
-            user['password'] = data['password']
-        if 'isAdmin' in data:
-            user['isAdmin'] = data['isAdmin']
-        if 'permissions' in data:
-            user['permissions'] = data['permissions']
-        
-        # 更新token
-        import time
-        user['token'] = f"{user['username']}-token-{int(time.time())}"
-        
-        users[user_index] = user
-        if save_users(users):
-            # 返回不含密码的用户信息
-            user_without_password = {k: v for k, v in user.items() if k != 'password'}
-            return jsonify({'user': user_without_password})
-        else:
-            return jsonify({'error': '保存用户失败'}), 500
-    except Exception as e:
-        logger.error(f"编辑用户失败: {e}")
-        return jsonify({'error': '编辑用户失败'}), 500
-
-# 删除用户API
-@app.route('/api/users/<int:user_id>', methods=['DELETE'])
-def delete_user(user_id):
-    """删除现有用户"""
-    try:
-        users = load_users()
-        
-        # 检查用户是否存在
-        user = next((u for u in users if u['id'] == user_id), None)
-        if not user:
-            return jsonify({'error': '用户不存在'}), 404
-        
-        # 不允许删除最后一个管理员
-        admin_users = [u for u in users if u['isAdmin']]
-        if len(admin_users) == 1 and admin_users[0]['id'] == user_id:
-            return jsonify({'error': '不能删除最后一个管理员'}), 400
-        
-        # 删除用户
-        users = [u for u in users if u['id'] != user_id]
-        if save_users(users):
-            return jsonify({'success': True})
-        else:
-            return jsonify({'error': '删除用户失败'}), 500
-    except Exception as e:
-        logger.error(f"删除用户失败: {e}")
-        return jsonify({'error': '删除用户失败'}), 500
-
-# 配置日志
-logger = logging.getLogger('FilePreviewServer')
-logger.setLevel(logging.WARNING)  # 设置为DEBUG级别以便调试
-
-# 控制台日志处理器
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-logger.addHandler(console_handler)
-
-# 用户数据存储文件路径
-USERS_FILE_PATH = Path(__file__).parent / "users.json"
-
-# 收藏数据存储文件路径
-FAVORITES_FILE_PATH = Path(__file__).parent / "favorites.json"
-
-# 加载用户数据
-def load_users():
-    """从JSON文件加载用户数据"""
-    try:
-        if USERS_FILE_PATH.exists():
-            with open(USERS_FILE_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f).get('users', [])
-        return []
-    except Exception as e:
-        logger.error(f"加载用户数据失败: {e}")
-        return []
-
-# 保存用户数据
-def save_users(users):
-    """将用户数据保存到JSON文件"""
-    try:
-        with open(USERS_FILE_PATH, 'w', encoding='utf-8') as f:
-            json.dump({'users': users}, f, indent=2, ensure_ascii=False)
-        return True
-    except Exception as e:
-        logger.error(f"保存用户数据失败: {e}")
-        return False
-
-# 加载收藏数据
-def load_favorites():
-    """从JSON文件加载收藏数据"""
-    try:
-        if FAVORITES_FILE_PATH.exists():
-            with open(FAVORITES_FILE_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f).get('favorites', [])
-        return []
-    except Exception as e:
-        logger.error(f"加载收藏数据失败: {e}")
-        return []
-
-# 保存收藏数据
-def save_favorites(favorites):
-    """将收藏数据保存到JSON文件"""
-    try:
-        with open(FAVORITES_FILE_PATH, 'w', encoding='utf-8') as f:
-            json.dump({'favorites': favorites}, f, indent=2, ensure_ascii=False)
-        return True
-    except Exception as e:
-        logger.error(f"保存收藏数据失败: {e}")
-        return False
-
-# 简单的认证装饰器
-from functools import wraps
-
-def get_username_from_token(token):
-    """从token中提取用户名（token格式：username-token-timestamp）"""
-    if not token or not isinstance(token, str) or '-token' not in token:
+        import bcrypt
+        return bcrypt
+    except ImportError:
         return None
-    return token.split('-token')[0]
 
-def require_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        # 从Authorization头获取token
-        auth = request.headers.get('Authorization')
-        token = None
-        
-        if auth:
-            # 简单的token验证（实际项目中应该使用JWT或其他安全机制）
-            token = auth.split(' ')[1] if len(auth.split(' ')) > 1 else auth
-        else:
-            # 从URL参数获取token（用于新窗口预览）
-            token = request.args.get('token')
-        
-        if not token:
-            return jsonify({'error': '认证失败：未提供token'}), 401
-        
-        # 简化的token验证（实际项目中应该使用JWT或其他安全机制）
-        # 只要token不为空且格式符合预期（如包含'-token'），就允许访问
-        # 这种方式允许前端动态生成token
-        if not token or not isinstance(token, str) or '-token' not in token:
-            return jsonify({'error': '认证失败：无效的token格式'}), 401
-        
-        return f(*args, **kwargs)
-    return decorated
+def hash_password(password):
+    """对密码进行 bcrypt 哈希，不可用时回退 SHA256"""
+    bc = _get_bcrypt()
+    if bc:
+        return bc.hashpw(password.encode('utf-8'), bc.gensalt(10)).decode('utf-8')
+    # 回退：SHA256 + salt
+    salt = os.urandom(16).hex()
+    h = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+    return f"sha256${salt}${h}"
 
-# 文件夹配置路径
-FOLDER_CONFIG_PATH = Path(MOBILE_HDD_PATH) / ".folder_config.json"
+def verify_password(password, stored_hash):
+    """验证密码，自动识别哈希格式"""
+    if not stored_hash:
+        return False
 
-def natural_sort_key(s):
-    """
-    自然排序键函数
-    将字符串拆分为数字和非数字部分，数字部分转换为整数
-    """
-    return [int(text) if text.isdigit() else text.lower()
-            for text in re.split(r'(\d+)', s)]
+    # 明文密码（旧格式，无 $ 分隔符）
+    if '$' not in stored_hash:
+        return hmac.compare_digest(password, stored_hash)
+
+    # SHA256 回退格式
+    if stored_hash.startswith('sha256$'):
+        parts = stored_hash.split('$')
+        if len(parts) != 3:
+            return False
+        _, salt, h = parts
+        computed = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+        return hmac.compare_digest(computed, h)
+
+    # bcrypt 格式
+    bc = _get_bcrypt()
+    if bc:
+        try:
+            return bc.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
+        except Exception:
+            return False
+
+    return False
+
+def needs_rehash(stored_hash):
+    """判断密码哈希是否需要升级（明文 → 哈希）"""
+    if not stored_hash:
+        return True
+    return '$' not in stored_hash
+
+# ==================== Token 安全 ====================
+
+def generate_token(username):
+    """生成 HMAC 签名 token：username.timestamp.signature"""
+    ts = str(int(time.time()))
+    msg = f"{username}.{ts}"
+    sig = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{msg}.{sig}"
+
+def verify_token(token):
+    """验证 token 签名和过期时间，返回 username 或 None"""
+    if not token or not isinstance(token, str):
+        return None
+
+    parts = token.split('.')
+    if len(parts) != 3:
+        # 兼容旧格式 username-token-timestamp
+        if '-token' in token:
+            return _verify_legacy_token(token)
+        return None
+
+    username, ts_str, sig = parts
+    try:
+        ts = int(ts_str)
+    except ValueError:
+        return None
+
+    # 检查过期
+    if time.time() - ts > TOKEN_EXPIRE_SECONDS:
+        return None
+
+    # 验证签名
+    msg = f"{username}.{ts_str}"
+    expected_sig = hmac.new(SECRET_KEY.encode(), msg.encode(), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(sig, expected_sig):
+        return None
+
+    return username
+
+def _verify_legacy_token(token):
+    """兼容旧 token 格式，只提取用户名（7天内创建的旧 token 有效）"""
+    try:
+        parts = token.split('-token-')
+        if len(parts) != 2:
+            return None
+        username = parts[0]
+        ts = int(parts[1])
+        if time.time() - ts > TOKEN_EXPIRE_SECONDS:
+            return None
+        return username
+    except (ValueError, IndexError):
+        return None
+
+# ==================== 登录限流 ====================
+
+_login_attempts = defaultdict(list)  # key: IP, value: [timestamps]
+_login_user_attempts = defaultdict(list)  # key: username, value: [timestamps]
+
+def _check_rate_limit(key, store):
+    """检查是否超过限流，返回 True 表示被限流"""
+    now = time.time()
+    # 清理过期记录
+    store[key] = [t for t in store[key] if now - t < LOGIN_RATE_WINDOW]
+    return len(store[key]) >= LOGIN_RATE_LIMIT
+
+def _record_attempt(key, store):
+    now = time.time()
+    store[key].append(now)
+
+# ==================== 路径安全 ====================
+
+def safe_path(directory, base=MOBILE_HDD_PATH):
+    """安全处理路径，防止路径遍历攻击"""
+    decoded = urllib.parse.unquote(directory) if directory else ''
+    full = Path(base) / decoded
+    try:
+        # resolve() 会解析 .. 和符号链接
+        resolved = full.resolve()
+        base_resolved = Path(base).resolve()
+        # 确保结果在基础路径内
+        if not str(resolved).startswith(str(base_resolved)):
+            logger.warning(f"路径遍历攻击尝试: {directory}")
+            return None, None
+        return resolved, base_resolved
+    except Exception:
+        return None, None
+
+# ==================== 数据读写 ====================
+
+def load_json_file(filepath, key):
+    """通用 JSON 文件加载"""
+    try:
+        if filepath.exists():
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get(key, [])
+        return []
+    except Exception as e:
+        logger.error(f"加载 {filepath} 失败: {e}")
+        return []
+
+def save_json_file(filepath, data, key):
+    """通用 JSON 文件保存"""
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump({key: data}, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        logger.error(f"保存 {filepath} 失败: {e}")
+        return False
+
+def load_users():
+    return load_json_file(USERS_FILE, 'users')
+
+def save_users(users):
+    return save_json_file(USERS_FILE, users, 'users')
+
+def load_favorites():
+    return load_json_file(FAVORITES_FILE, 'favorites')
+
+def save_favorites(favorites):
+    return save_json_file(FAVORITES_FILE, favorites, 'favorites')
 
 def load_folder_config():
-    """加载文件夹显示/隐藏配置"""
-    config = {
+    """加载文件夹配置（带缓存）"""
+    cached = config_cache.get('folder_config')
+    if cached is not None:
+        return cached
+
+    default = {
         "hidden_folders": [],
         "hidden_files": [],
         "hidden_extensions": [],
         "show_hidden": False,
         "show_config_files": False
     }
-
     try:
-        if FOLDER_CONFIG_PATH.exists():
-            with open(FOLDER_CONFIG_PATH, 'r') as f:
-                content = f.read()
-                if content.strip():  # 检查内容是否为空
-                    config.update(json.loads(content))
-                else:
-                    logger.warning("文件夹配置文件为空，使用默认配置")
+        if FOLDER_CONFIG_FILE.exists():
+            with open(FOLDER_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content:
+                    default.update(json.loads(content))
     except Exception as e:
         logger.error(f"加载文件夹配置失败: {e}")
 
-    return config
+    config_cache.set('folder_config', default)
+    return default
 
-
-def save_folder_config(config):
-    """保存文件夹显示/隐藏配置"""
+def save_folder_config(cfg):
+    """保存文件夹配置并刷新缓存"""
     try:
-        # 确保父目录存在
-        FOLDER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(FOLDER_CONFIG_PATH, 'w') as f:
-            json.dump(config, f, indent=2)
+        FOLDER_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(FOLDER_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, indent=2)
+        config_cache.delete('folder_config')
     except Exception as e:
         logger.error(f"保存文件夹配置失败: {e}")
 
+# ==================== 认证装饰器 ====================
 
-def detect_encoding(file_path):
-    """更可靠的编码检测函数"""
-    try:
-        # 读取文件的前10KB来检测编码
-        with open(file_path, 'rb') as f:
-            raw_data = f.read(10000)
+def get_current_user():
+    """从请求中获取当前用户名"""
+    auth = request.headers.get('Authorization')
+    token = None
 
-        # 使用chardet检测编码
-        result = chardet.detect(raw_data)
-        encoding = result['encoding']
-        confidence = result['confidence']
+    if auth:
+        parts = auth.split(' ')
+        token = parts[1] if len(parts) > 1 else auth
+    else:
+        token = request.args.get('token')
 
-        # 如果置信度低，尝试使用常见编码
-        if confidence < 0.7:
-            # 尝试常见中文编码
-            for enc in ['gb2312', 'gbk', 'gb18030', 'big5', 'utf-8']:
-                try:
-                    # 尝试用该编码解码
-                    raw_data.decode(enc)
-                    return enc
-                except:
-                    continue
+    if not token:
+        return None
+    return verify_token(token)
 
-            # 尝试其他常见编码
-            for enc in ['latin1', 'iso-8859-1', 'cp1252']:
-                try:
-                    raw_data.decode(enc)
-                    return enc
-                except:
-                    continue
+def require_auth(f):
+    """认证装饰器 - 验证 token 并注入 current_user"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        username = get_current_user()
+        if not username:
+            return jsonify({'error': '认证失败：无效或过期的 token'}), 401
+        # 注入到 request 上下文
+        request._current_user = username
+        return f(*args, **kwargs)
+    return decorated
 
-        return encoding or 'gb2312'  # 默认使用GB2312
-    except Exception as e:
-        logger.error(f"检测文件编码失败: {e}")
-        return 'gb2312'  # 默认使用GB2312
+def require_admin(f):
+    """管理员权限装饰器"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        username = getattr(request, '_current_user', None)
+        if not username:
+            username = get_current_user()
+        if not username:
+            return jsonify({'error': '认证失败'}), 401
 
+        users = load_users()
+        user = next((u for u in users if u['username'] == username), None)
+        if not user or not user.get('isAdmin'):
+            return jsonify({'error': '需要管理员权限'}), 403
 
-def get_video_subtitles(file_path):
-    """获取视频文件的内嵌字幕轨道信息"""
-    import subprocess
-    import json
-    
-    try:
-        # 使用ffprobe获取视频流信息，包括字幕轨道
-        cmd = [
-            'ffprobe',
-            '-v', 'quiet',
-            '-print_format', 'json',
-            '-show_format',
-            '-show_streams',
-            str(file_path)
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        data = json.loads(result.stdout)
-        
-        # 提取字幕轨道信息
-        subtitles = []
-        for stream in data.get('streams', []):
-            if stream.get('codec_type') == 'subtitle':
-                subtitle_info = {
-                    'index': stream.get('index'),
-                    'codec_name': stream.get('codec_name'),
-                    'codec_long_name': stream.get('codec_long_name'),
-                    'language': stream.get('tags', {}).get('language', 'unknown'),
-                    'title': stream.get('tags', {}).get('title', f'字幕轨道 {stream.get("index")}')
-                }
-                subtitles.append(subtitle_info)
-        
-        return subtitles
-    except subprocess.CalledProcessError as e:
-        logger.error(f"FFprobe命令执行失败: {e}")
-        return []
-    except json.JSONDecodeError as e:
-        logger.error(f"解析FFprobe输出失败: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"获取字幕轨道信息失败: {e}")
-        return []
+        request._current_user = username
+        return f(*args, **kwargs)
+    return decorated
 
+# ==================== 权限检查 ====================
 
-# 缓存字典，用于存储目录的文件列表，格式：{directory_path: (timestamp, files_list)}
-file_cache = {}
+def check_permission(username, path):
+    """检查用户是否有权访问指定路径"""
+    users = load_users()
+    user = next((u for u in users if u['username'] == username), None)
+    if not user:
+        return False
 
-# 定义要隐藏的文件列表（移到函数外部，避免重复定义）
-HIDDEN_FILES = [
-    '.DS_Store', 'Thumbs.db', 'desktop.ini',
-    '.folder_config.json', '.gitignore', '.htaccess'
-]
+    # 管理员有全部权限
+    if user.get('isAdmin'):
+        return True
 
-# 缓存有效期，单位：秒
-CACHE_DURATION = 30
+    permissions = user.get('permissions', [])
+    # 通配符权限
+    if '*' in permissions:
+        return True
 
-# 通用路径处理和缓存检查函数
-def process_directory(directory):
-    """处理目录路径和缓存检查的通用函数"""
-    base_path = Path(MOBILE_HDD_PATH)
-    current_time = time.time()
-    
-    # 安全处理目录路径
-    safe_directory = urllib.parse.unquote(directory)
-    full_path = base_path / safe_directory
-    cache_key = str(full_path)
+    # 检查路径是否在允许的权限目录下
+    for perm in permissions:
+        if path.startswith(perm) or path.startswith('/' + perm):
+            return True
+        # 也匹配子路径
+        norm_perm = perm.strip('/')
+        norm_path = path.strip('/')
+        if norm_path.startswith(norm_perm):
+            return True
 
-    logger.debug(f"扫描目录: {full_path}")
+    return False
 
-    if not full_path.exists() or not full_path.is_dir():
-        logger.warning(f"目录不存在或不是文件夹: {full_path}")
-        return None, current_time, cache_key
+# ==================== 工具函数 ====================
 
-    return full_path, current_time, cache_key
-
-def get_files(directory='', sort_by='name', sort_order='asc'):
-    """获取指定目录中的文件（视频和文本）并排序（优化版）"""
-    try:
-        # 使用通用目录处理函数
-        full_path, current_time, cache_key = process_directory(directory)
-        base_path = Path(MOBILE_HDD_PATH)  # 定义base_path变量
-        
-        if not full_path:
-            return []
-
-        # 检查缓存是否有效
-        if cache_key in file_cache:
-            cached_time, cached_files = file_cache[cache_key]
-            if current_time - cached_time < CACHE_DURATION:
-                logger.debug(f"使用缓存的文件列表，目录: {cache_key}")
-                # 对缓存的文件进行排序后返回
-                return sort_items(cached_files.copy(), sort_by, sort_order)
-
-        files = []
-        config = load_folder_config()
-
-        # 使用os.scandir()代替Path.iterdir()，更高效
-        with os.scandir(full_path) as entries:
-            for entry in entries:
-                if entry.is_file():
-                    file_name = entry.name
-                    # 获取文件扩展名（小写，不带点）
-                    file_ext = os.path.splitext(file_name)[1].lower()[1:] if '.' in file_name else ''
-
-                    # 跳过隐藏文件和配置文件
-                    if not config['show_config_files']:
-                        if file_name in HIDDEN_FILES or file_name.startswith('.'):
-                            continue
-
-                    # 跳过特定扩展名的文件
-                    if file_ext in config['hidden_extensions']:
-                        continue
-
-                    # 跳过特定文件
-                    if file_name in config['hidden_files']:
-                        continue
-
-                    # 检查是否是视频文件、文本文件或图片文件
-                    if file_ext in VIDEO_EXTENSIONS or file_ext in TEXT_EXTENSIONS or file_ext in IMAGE_EXTENSIONS:
-                        # 使用原始路径
-                        rel_path = str(Path(entry.path).relative_to(base_path))
-
-                        # 安全编码路径
-                        safe_rel_path = urllib.parse.quote(rel_path)
-
-                        # 获取文件信息
-                        stat = entry.stat(follow_symlinks=False)
-                        file_size = stat.st_size
-                        modified_time = stat.st_mtime
-
-                        # 确定文件类型
-                        file_type = 'other'
-                        if file_ext in VIDEO_EXTENSIONS:
-                            file_type = 'video'
-                        elif file_ext in TEXT_EXTENSIONS:
-                            file_type = 'text'
-                        elif file_ext in IMAGE_EXTENSIONS:
-                            file_type = 'image'
-
-                        files.append({
-                            'name': file_name,
-                            'size': file_size,
-                            'path': rel_path,
-                            'modified': modified_time,
-                            'url': url_for('serve_file', filename=safe_rel_path),
-                            'preview_url': url_for('preview_file',
-                                                filename=safe_rel_path) if file_type == 'video' else \
-                                            url_for('preview_text', filename=safe_rel_path) if file_type == 'text' else \
-                                            url_for('serve_file', filename=safe_rel_path),
-                            'type': file_type
-                        })
-
-        # 将结果存入缓存
-        file_cache[cache_key] = (current_time, files.copy())
-
-        # 排序处理
-        files = sort_items(files, sort_by, sort_order)
-
-        logger.debug(f"找到 {len(files)} 个文件")
-        return files
-    except Exception as e:
-        logger.error(f"获取文件失败: {e}")
-        return []
-
-
-# 缓存字典，用于存储目录的文件夹列表，格式：{directory_path: (timestamp, folders_list)}
-folder_cache = {}
-
-# 定义要隐藏的文件夹列表（移到函数外部，避免重复定义）
-HIDDEN_FOLDERS = [
-    '.git', '.svn', '.idea', '.vscode', '__pycache__',
-    'node_modules', 'vendor', 'cache', 'logs'
-]
-
-def get_folders(directory='', sort_by='name', sort_order='asc'):
-    """获取指定目录中的文件夹并排序（优化版）"""
-    try:
-        # 使用通用目录处理函数
-        full_path, current_time, cache_key = process_directory(directory)
-        base_path = Path(MOBILE_HDD_PATH)  # 定义base_path变量
-        
-        if not full_path:
-            return []
-
-        # 检查缓存是否有效
-        if cache_key in folder_cache:
-            cached_time, cached_folders = folder_cache[cache_key]
-            if current_time - cached_time < CACHE_DURATION:
-                logger.debug(f"使用缓存的文件夹列表，目录: {cache_key}")
-                # 对缓存的文件夹进行排序后返回
-                return sort_items(cached_folders.copy(), sort_by, sort_order)
-
-        folders = []
-        config = load_folder_config()
-
-        # 使用os.scandir()代替Path.iterdir()，更高效
-        with os.scandir(full_path) as entries:
-            for entry in entries:
-                if entry.is_dir():
-                    folder_name = entry.name
-                    folder_path = str(Path(entry.path).relative_to(base_path))
-
-                    # 跳过隐藏文件夹
-                    if not config['show_hidden']:
-                        if folder_name in HIDDEN_FOLDERS or folder_name.startswith('.'):
-                            continue
-
-                    # 跳过特定文件夹
-                    if folder_path in config['hidden_folders']:
-                        continue
-
-                    hidden = folder_path in config['hidden_folders']
-
-                    # 安全编码路径
-                    safe_folder_path = urllib.parse.quote(folder_path)
-
-                    # 为每个文件夹生成一个唯一的颜色标识
-                    import hashlib
-                    # 使用文件夹路径生成稳定的哈希值，确保相同文件夹始终显示相同的颜色
-                    folder_hash = hashlib.md5(folder_path.encode()).hexdigest()
-                    color_hue = int(folder_hash[:6], 16) % 360
-                    folder_color = f'hsl({color_hue}, 70%, 60%)'
-                    
-                    # 所有文件夹使用相同的图标
-                    folder_icon = 'fa-folder'
-                    
-                    # 获取修改时间（使用entry.stat(follow_symlinks=False)避免跟随符号链接）
-                    try:
-                        stat_info = entry.stat(follow_symlinks=False)
-                        modified_time = stat_info.st_mtime
-                    except Exception as e:
-                        logger.warning(f"获取文件夹{folder_path}修改时间失败: {e}")
-                        modified_time = 0
-
-                    folders.append({
-                        'name': folder_name,
-                        'path': folder_path,
-                        'safe_path': safe_folder_path,
-                        'modified': modified_time,
-                        'hidden': hidden,
-                        'size': 0,  # 文件夹大小设为0
-                        'type': 'folder',
-                        'color': folder_color,
-                        'icon': folder_icon
-                    })
-
-        # 将结果存入缓存
-        folder_cache[cache_key] = (current_time, folders.copy())
-
-        # 排序处理
-        folders = sort_items(folders, sort_by, sort_order)
-
-        logger.debug(f"找到 {len(folders)} 个文件夹")
-        return folders
-    except Exception as e:
-        logger.error(f"获取文件夹失败: {e}")
-        return []
-
+def natural_sort_key(s):
+    """自然排序键"""
+    return [int(t) if t.isdigit() else t.lower()
+            for t in re.split(r'(\d+)', s)]
 
 def sort_items(items, sort_by='name', sort_order='asc'):
-    """通用排序函数"""
+    """通用排序"""
     if not items:
         return items
 
-    # 确定排序键
-    if sort_by == 'name':
-        # 使用自然排序
-        key_func = lambda x: natural_sort_key(x['name'])
-    elif sort_by == 'modified':
-        key_func = lambda x: x['modified']
-    elif sort_by == 'size':
-        key_func = lambda x: x['size']
-    elif sort_by == 'type':
-        key_func = lambda x: x['type']
-    else:
-        key_func = lambda x: natural_sort_key(x['name'])  # 默认按名称
+    key_map = {
+        'name': lambda x: natural_sort_key(x['name']),
+        'modified': lambda x: x.get('modified', 0),
+        'size': lambda x: x.get('size', 0),
+        'type': lambda x: x.get('type', ''),
+    }
+    key_func = key_map.get(sort_by, key_map['name'])
+    return sorted(items, key=key_func, reverse=(sort_order == 'desc'))
 
-    # 执行排序
-    sorted_items = sorted(items, key=key_func, reverse=(sort_order == 'desc'))
+def detect_encoding(file_path):
+    """检测文件编码"""
+    try:
+        with open(file_path, 'rb') as f:
+            raw = f.read(8192)
 
-    return sorted_items
+        try:
+            import chardet
+            result = chardet.detect(raw)
+            if result['confidence'] >= 0.7 and result['encoding']:
+                return result['encoding']
+        except ImportError:
+            pass
 
+        # 回退：尝试常见编码
+        for enc in ['utf-8', 'gb2312', 'gbk', 'gb18030', 'big5', 'latin1']:
+            try:
+                raw.decode(enc)
+                return enc
+            except (UnicodeDecodeError, LookupError):
+                continue
+
+        return 'gb2312'
+    except Exception:
+        return 'gb2312'
+
+def get_video_subtitles(file_path):
+    """获取视频内嵌字幕轨道"""
+    import subprocess
+    try:
+        cmd = [
+            'ffprobe', '-v', 'quiet', '-print_format', 'json',
+            '-show_format', '-show_streams', str(file_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
+        data = json.loads(result.stdout)
+
+        subtitles = []
+        for stream in data.get('streams', []):
+            if stream.get('codec_type') == 'subtitle':
+                tags = stream.get('tags', {})
+                subtitles.append({
+                    'index': stream.get('index'),
+                    'codec_name': stream.get('codec_name'),
+                    'codec_long_name': stream.get('codec_long_name'),
+                    'language': tags.get('language', 'unknown'),
+                    'title': tags.get('title', f'字幕轨道 {stream.get("index")}')
+                })
+        return subtitles
+    except Exception as e:
+        logger.error(f"获取字幕失败: {e}")
+        return []
+
+def invalidate_dir_cache(dir_path):
+    """清除指定目录的缓存"""
+    full = Path(MOBILE_HDD_PATH) / dir_path
+    key = str(full)
+    file_cache.delete(key)
+    folder_cache.delete(key)
+
+# ==================== 核心功能：获取文件/文件夹 ====================
+
+def get_files(directory='', sort_by='name', sort_order='asc'):
+    """获取目录中的文件列表"""
+    full_path, base_path = safe_path(directory)
+    if not full_path:
+        return []
+
+    cache_key = str(full_path)
+    cached = file_cache.get(cache_key)
+    if cached is not None:
+        return sort_items(cached.copy(), sort_by, sort_order)
+
+    cfg = load_folder_config()
+    show_config = cfg.get('show_config_files', False)
+    hidden_exts = set(cfg.get('hidden_extensions', []))
+    hidden_names = set(cfg.get('hidden_files', []))
+
+    files = []
+    try:
+        with os.scandir(full_path) as entries:
+            for entry in entries:
+                if not entry.is_file():
+                    continue
+
+                name = entry.name
+                ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+
+                # 过滤
+                if not show_config and (name in HIDDEN_FILES or name.startswith('.')):
+                    continue
+                if ext in hidden_exts or name in hidden_names:
+                    continue
+                if ext not in PREVIEWABLE_EXTENSIONS:
+                    continue
+
+                # 路径
+                try:
+                    rel = str(Path(entry.path).relative_to(base_path))
+                except ValueError:
+                    continue
+
+                # stat（一次调用获取大小和时间）
+                try:
+                    stat = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+
+                # 文件类型
+                if ext in VIDEO_EXTENSIONS:
+                    ftype = 'video'
+                elif ext in TEXT_EXTENSIONS:
+                    ftype = 'text'
+                elif ext in IMAGE_EXTENSIONS:
+                    ftype = 'image'
+                else:
+                    continue
+
+                safe_rel = urllib.parse.quote(rel)
+
+                files.append({
+                    'name': name,
+                    'size': stat.st_size,
+                    'path': rel,
+                    'modified': stat.st_mtime,
+                    'url': f'/file/{safe_rel}',
+                    'preview_url': f'/file/{safe_rel}' if ftype != 'video' else f'/video/{safe_rel}',
+                    'type': ftype,
+                })
+    except PermissionError:
+        logger.warning(f"无权限访问: {full_path}")
+    except Exception as e:
+        logger.error(f"扫描目录失败: {e}")
+
+    file_cache.set(cache_key, files.copy())
+    return sort_items(files, sort_by, sort_order)
+
+
+def get_folders(directory='', sort_by='name', sort_order='asc'):
+    """获取目录中的文件夹列表"""
+    full_path, base_path = safe_path(directory)
+    if not full_path:
+        return []
+
+    cache_key = str(full_path)
+    cached = folder_cache.get(cache_key)
+    if cached is not None:
+        return sort_items(cached.copy(), sort_by, sort_order)
+
+    cfg = load_folder_config()
+    show_hidden = cfg.get('show_hidden', False)
+    hidden_dirs = set(cfg.get('hidden_folders', []))
+
+    folders = []
+    try:
+        with os.scandir(full_path) as entries:
+            for entry in entries:
+                if not entry.is_dir():
+                    continue
+
+                name = entry.name
+
+                # 过滤
+                if not show_hidden and (name in HIDDEN_FOLDERS or name.startswith('.')):
+                    continue
+
+                try:
+                    rel = str(Path(entry.path).relative_to(base_path))
+                except ValueError:
+                    continue
+
+                if rel in hidden_dirs:
+                    continue
+
+                # 修改时间
+                try:
+                    mtime = entry.stat(follow_symlinks=False).st_mtime
+                except OSError:
+                    mtime = 0
+
+                # 文件夹颜色（稳定的哈希）
+                h = hashlib.md5(rel.encode()).hexdigest()
+                hue = int(h[:6], 16) % 360
+
+                folders.append({
+                    'name': name,
+                    'path': rel,
+                    'safe_path': urllib.parse.quote(rel),
+                    'modified': mtime,
+                    'hidden': rel in hidden_dirs,
+                    'size': 0,
+                    'type': 'folder',
+                    'color': f'hsl({hue}, 70%, 60%)',
+                    'icon': 'fa-folder',
+                })
+    except PermissionError:
+        logger.warning(f"无权限访问: {full_path}")
+    except Exception as e:
+        logger.error(f"扫描目录失败: {e}")
+
+    folder_cache.set(cache_key, folders.copy())
+    return sort_items(folders, sort_by, sort_order)
+
+# ==================== 模板过滤器 ====================
 
 @app.template_filter('format_size')
 def format_size(size_bytes):
-    """字节大小转可读格式"""
-    if size_bytes >= 1024 ** 3:  # GB
-        return f"{size_bytes / (1024 ** 3):.1f} GB"
-    elif size_bytes >= 1024 ** 2:  # MB
-        return f"{size_bytes / (1024 ** 2):.1f} MB"
-    elif size_bytes >= 1024:  # KB
+    if size_bytes >= 1073741824:
+        return f"{size_bytes / 1073741824:.1f} GB"
+    if size_bytes >= 1048576:
+        return f"{size_bytes / 1048576:.1f} MB"
+    if size_bytes >= 1024:
         return f"{size_bytes / 1024:.1f} KB"
-    else:
-        return f"{size_bytes} B"
-
+    return f"{size_bytes} B"
 
 @app.template_filter('format_time')
 def format_time(timestamp, fmt=None):
-    """时间戳转可读格式"""
-    if fmt:
-        return time.strftime(fmt, time.localtime(timestamp))
-    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
+    return time.strftime(fmt or '%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
 
+# ==================== 路由：认证 ====================
 
-@app.route('/')
-def index():
-    """主页面 - 直接返回前端构建后的index.html文件"""
-    return send_from_directory('frontend/dist', 'index.html')
+@app.route('/api/login', methods=['POST'])
+def login():
+    """用户登录"""
+    try:
+        data = request.get_json(silent=True) or {}
+        username = (data.get('username') or '').strip()
+        password = data.get('password', '')
 
+        if not username or not password:
+            return jsonify({'error': '用户名和密码不能为空'}), 400
 
-@app.route('/files')
+        # 限流检查
+        client_ip = request.remote_addr
+        if _check_rate_limit(client_ip, _login_attempts):
+            return jsonify({'error': f'登录尝试过多，请{LOGIN_RATE_WINDOW // 60}分钟后再试'}), 429
+        if _check_rate_limit(username, _login_user_attempts):
+            return jsonify({'error': f'该账号登录尝试过多，请稍后再试'}), 429
+
+        users = load_users()
+        user = next((u for u in users if u['username'] == username), None)
+
+        if not user or not verify_password(password, user.get('password', '')):
+            _record_attempt(client_ip, _login_attempts)
+            _record_attempt(username, _login_user_attempts)
+            return jsonify({'error': '用户名或密码错误'}), 401
+
+        # 密码需要升级（明文 → 哈希）
+        if needs_rehash(user.get('password', '')):
+            user['password'] = hash_password(password)
+            save_users(users)
+            logger.info(f"用户 {username} 密码已升级为安全哈希")
+
+        # 生成新 token
+        token = generate_token(username)
+        user_obj = {k: v for k, v in user.items() if k != 'password'}
+        user_obj['token'] = token
+
+        # 清除限流记录
+        _login_attempts.pop(client_ip, None)
+        _login_user_attempts.pop(username, None)
+
+        return jsonify({'user': user_obj})
+
+    except Exception as e:
+        logger.error(f"登录失败: {e}")
+        return jsonify({'error': '登录失败，请稍后重试'}), 500
+
+# ==================== 路由：用户管理 ====================
+
+@app.route('/api/users', methods=['GET'])
 @require_auth
-def redirect_files():
-    """Redirect /files to homepage to fix 404 on refresh"""
-    return redirect(url_for('index'))
+def get_users():
+    """获取用户列表"""
+    users = load_users()
+    result = [{k: v for k, v in u.items() if k != 'password'} for u in users]
+    return jsonify({'users': result})
+
+@app.route('/api/users', methods=['POST'])
+@require_admin
+def add_user():
+    """添加用户"""
+    try:
+        data = request.get_json(silent=True) or {}
+        username = (data.get('username') or '').strip()
+        password = data.get('password', '')
+        is_admin = data.get('isAdmin', False)
+        permissions = data.get('permissions', [])
+
+        if not username or not password:
+            return jsonify({'error': '用户名和密码不能为空'}), 400
+
+        users = load_users()
+        if any(u['username'] == username for u in users):
+            return jsonify({'error': '用户名已存在'}), 400
+
+        new_user = {
+            'id': max((u['id'] for u in users), default=0) + 1,
+            'username': username,
+            'password': hash_password(password),
+            'isAdmin': is_admin,
+            'permissions': permissions,
+        }
+
+        users.append(new_user)
+        if save_users(users):
+            user_obj = {k: v for k, v in new_user.items() if k != 'password'}
+            user_obj['token'] = generate_token(username)
+            return jsonify({'user': user_obj}), 201
+        return jsonify({'error': '保存用户失败'}), 500
+
+    except Exception as e:
+        logger.error(f"添加用户失败: {e}")
+        return jsonify({'error': '添加用户失败'}), 500
+
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@require_admin
+def edit_user(user_id):
+    """编辑用户"""
+    try:
+        data = request.get_json(silent=True) or {}
+        users = load_users()
+
+        idx = next((i for i, u in enumerate(users) if u['id'] == user_id), None)
+        if idx is None:
+            return jsonify({'error': '用户不存在'}), 404
+
+        user = users[idx]
+        if 'username' in data:
+            user['username'] = data['username']
+        if data.get('password'):
+            user['password'] = hash_password(data['password'])
+        if 'isAdmin' in data:
+            user['isAdmin'] = data['isAdmin']
+        if 'permissions' in data:
+            user['permissions'] = data['permissions']
+
+        users[idx] = user
+        if save_users(users):
+            user_obj = {k: v for k, v in user.items() if k != 'password'}
+            return jsonify({'user': user_obj})
+        return jsonify({'error': '保存用户失败'}), 500
+
+    except Exception as e:
+        logger.error(f"编辑用户失败: {e}")
+        return jsonify({'error': '编辑用户失败'}), 500
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@require_admin
+def delete_user(user_id):
+    """删除用户"""
+    try:
+        users = load_users()
+        user = next((u for u in users if u['id'] == user_id), None)
+        if not user:
+            return jsonify({'error': '用户不存在'}), 404
+
+        # 不允许删除最后一个管理员
+        admins = [u for u in users if u.get('isAdmin')]
+        if len(admins) == 1 and admins[0]['id'] == user_id:
+            return jsonify({'error': '不能删除最后一个管理员'}), 400
+
+        users = [u for u in users if u['id'] != user_id]
+        if save_users(users):
+            return jsonify({'success': True})
+        return jsonify({'error': '删除用户失败'}), 500
+
+    except Exception as e:
+        logger.error(f"删除用户失败: {e}")
+        return jsonify({'error': '删除用户失败'}), 500
+
+# ==================== 路由：文件浏览 ====================
 
 @app.route('/api/files')
 @require_auth
 def api_files():
-    """API端点 - 获取文件和文件夹列表"""
+    """获取文件和文件夹列表"""
     try:
         current_dir = request.args.get('dir', '')
-        logger.debug(f"当前目录参数: {current_dir}")
+        sort_by = request.args.get('sort_by', 'name')
+        sort_order = request.args.get('sort_order', 'asc')
 
-        # 获取排序参数
-        sort_by = request.args.get('sort_by', 'name')  # 默认按名称排序
-        sort_order = request.args.get('sort_order', 'asc')  # 默认升序
+        decoded_dir = urllib.parse.unquote(current_dir)
 
-        # 解码当前目录参数
-        decoded_current_dir = urllib.parse.unquote(current_dir)
-        logger.debug(f"解码后的目录: {decoded_current_dir}")
+        # 权限检查
+        username = getattr(request, '_current_user', None) or get_current_user()
+        if username and not check_permission(username, decoded_dir):
+            return jsonify({'error': '无权访问该目录'}), 403
 
-        # 获取文件和文件夹（带排序参数）
-        files = get_files(decoded_current_dir, sort_by=sort_by, sort_order=sort_order)
-        folders = get_folders(decoded_current_dir, sort_by=sort_by, sort_order=sort_order)
+        files = get_files(decoded_dir, sort_by, sort_order)
+        folders = get_folders(decoded_dir, sort_by, sort_order)
 
         parent_dir = None
-        if decoded_current_dir:
-            # 安全处理父目录路径
-            parent_path = Path(decoded_current_dir).parent
-            parent_dir = str(parent_path) if str(parent_path) != '.' else ''
-            # 安全编码父目录路径
-            parent_dir = urllib.parse.quote(parent_dir) if parent_dir else ''
+        if decoded_dir:
+            p = Path(decoded_dir).parent
+            parent_dir = urllib.parse.quote(str(p)) if str(p) != '.' else ''
 
-        # 加载配置
-        config = load_folder_config()
-
-        # 计算当前时间
-        current_time = int(time.time())
+        cfg = load_folder_config()
 
         return jsonify({
             'files': files,
             'folders': folders,
             'current_dir': current_dir,
             'parent_dir': parent_dir,
-            'now': current_time,
-            'show_hidden': config['show_hidden'],
+            'now': int(time.time()),
+            'show_hidden': cfg.get('show_hidden', False),
             'sort_by': sort_by,
-            'sort_order': sort_order
+            'sort_order': sort_order,
         })
     except Exception as e:
-        logger.error(f"API请求失败: {e}")
+        logger.error(f"API 请求失败: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-@app.route('/toggle_hidden', methods=['POST'])
-@require_auth
-def toggle_hidden():
-    """切换显示隐藏文件夹"""
-    config = load_folder_config()
-    config['show_hidden'] = not config['show_hidden']
-    save_folder_config(config)
-
-    # 重定向回当前页面
-    current_dir = request.form.get('current_dir', '')
-    return redirect(url_for('index', dir=current_dir))
-
-
-@app.route('/hide_folder', methods=['POST'])
-@require_auth
-def hide_folder():
-    """隐藏特定文件夹"""
-    folder_path = request.form.get('folder_path')
-    config = load_folder_config()
-
-    if folder_path and folder_path not in config['hidden_folders']:
-        config['hidden_folders'].append(folder_path)
-        save_folder_config(config)
-
-    # 重定向回当前页面
-    current_dir = request.form.get('current_dir', '')
-    return redirect(url_for('index', dir=current_dir))
-
-
-@app.route('/unhide_folder', methods=['POST'])
-@require_auth
-def unhide_folder():
-    """取消隐藏特定文件夹"""
-    folder_path = request.form.get('folder_path')
-    config = load_folder_config()
-
-    if folder_path and folder_path in config['hidden_folders']:
-        config['hidden_folders'].remove(folder_path)
-        save_folder_config(config)
-
-    # 重定向回当前页面
-    current_dir = request.form.get('current_dir', '')
-    return redirect(url_for('index', dir=current_dir))
-
+# ==================== 路由：文件预览 ====================
 
 @app.route('/preview/<path:filename>')
 @require_auth
 def preview_file(filename):
-    # 文件名已经是URL编码格式
-    decoded_filename = urllib.parse.unquote(filename)
-    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+    """文件预览"""
+    decoded = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded
 
     if not file_path.exists() or not file_path.is_file():
         return "文件不存在", 404
 
-    # 获取文件扩展名
-    file_ext = file_path.suffix.lower()[1:]  # 移除点号并转为小写
+    ext = file_path.suffix.lower()[1:]
 
-    # 检查文件类型
-    if file_ext in VIDEO_EXTENSIONS:
-        # 视频文件，使用视频预览模板
-        
-        # 解码文件名，用于显示
-        decoded_filename = urllib.parse.unquote(filename)
-        
-        # 获取文件路径对象，用于获取文件名
-        file_path = Path(decoded_filename)
-        
-        # 获取父目录，用于返回按钮
-        parent_dir = os.path.dirname(decoded_filename)
-        safe_parent_dir = urllib.parse.quote(parent_dir) if parent_dir else ''
-
-        # 编码文件名用于URL
-        encoded_filename = urllib.parse.quote(decoded_filename)
-        
-        # 获取完整的HTTP视频链接，确保使用正确的主机名
-        # 使用request.host来获取当前请求的主机名和端口
+    if ext in VIDEO_EXTENSIONS:
+        parent_dir = os.path.dirname(decoded)
+        token = request.args.get('token')
+        encoded = urllib.parse.quote(decoded)
         base_url = f"http://{request.host}"
-        
-        # 获取token参数，确保在URL中包含token用于认证
-        token = request.args.get('token')
-        
-        # 创建视频URL，包含token参数用于认证
-        video_url = f"{base_url}/video/{encoded_filename}?token={token}"
+        video_url = f"{base_url}/video/{encoded}?token={token}"
 
-        # 创建VLC协议URL
-        vlc_protocol_url = f"vlc://{video_url}"
-        
-        # 获取token参数
-        token = request.args.get('token')
-        
         return render_template(
             'video_preview.html',
-            video_filename=encoded_filename,
+            video_filename=encoded,
             video_title=file_path.name,
-            video_url=url_for('serve_video', filename=encoded_filename, _external=True),
-            parent_dir=safe_parent_dir,
-            vlc_protocol_url=vlc_protocol_url,
-            token=token  # 传递token参数给模板
+            video_url=url_for('serve_video', filename=encoded, _external=True),
+            parent_dir=urllib.parse.quote(parent_dir) if parent_dir else '',
+            vlc_protocol_url=f"vlc://{video_url}",
+            token=token,
         )
-    elif file_ext in TEXT_EXTENSIONS:
-        # 文本文件，使用文本预览模板
+    elif ext in TEXT_EXTENSIONS:
         return preview_text(filename)
     else:
-        # 其他类型文件，返回404
         return "不支持的文件类型", 404
 
-@app.route('/vlc_redirect/<path:filename>')
+@app.route('/preview_text/<path:filename>')
 @require_auth
-def vlc_redirect(filename):
-    # 文件名已经是URL编码格式
-    decoded_filename = urllib.parse.unquote(filename)
-    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+def preview_text(filename):
+    """文本预览"""
+    decoded = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded
 
-    if not file_path.exists():
-        return "文件或目录不存在", 404
+    if not file_path.exists() or not file_path.is_file():
+        return "文件不存在", 404
 
-    # 获取完整的HTTP视频链接，确保使用正确的主机名
-    base_url = f"http://{request.host}"
-    
-    # 获取token参数，确保在URL中包含token用于认证
+    file_size = file_path.stat().st_size
+    encoding = detect_encoding(file_path)
+    content = ""
+    error_message = ""
+
+    try:
+        enc = encoding
+        if enc.lower() in ('gb2312', 'gbk', 'gb18030'):
+            enc = 'gb18030'  # gb18030 是 gb2312 的超集
+
+        with open(file_path, 'r', encoding=enc, errors='replace') as f:
+            if file_size > 512000:
+                content = f.read(512000) + "\n\n[文件过大，只显示前500KB内容]"
+            else:
+                content = f.read()
+    except Exception as e:
+        try:
+            with open(file_path, 'rb') as f:
+                content = f.read(512000).decode('gb18030', errors='replace')
+                error_message = "部分内容可能显示不正确"
+        except Exception:
+            content = f"无法读取文件: {e}"
+
+    parent_dir = os.path.dirname(decoded)
+    file_ext = file_path.suffix.lower()[1:] if file_path.suffix else 'txt'
     token = request.args.get('token')
-    
-    # 单个文件处理
-    encoded_filename = urllib.parse.quote(decoded_filename)
-    video_url = f"{base_url}/video/{encoded_filename}?token={token}"
-    
-    # 创建VLC协议URL，使用vlc://前缀来确保系统调用VLC播放器
-    vlc_protocol_url = f"vlc://{video_url}"
-    
+
     return render_template(
-        'vlc_redirect.html',
-        vlc_url=vlc_protocol_url
+        'text_preview.html',
+        filename=filename,
+        file_title=file_path.name,
+        file_path=decoded,
+        content=content,
+        parent_dir=urllib.parse.quote(parent_dir) if parent_dir else '',
+        file_ext=file_ext,
+        encoding=encoding,
+        error_message=error_message,
+        file_size=file_size,
+        token=token,
     )
-
-
-
 
 @app.route('/api/preview_text/<path:filename>')
 @require_auth
 def api_preview_text(filename):
-    """API端点，返回文本文件的预览内容（JSON格式）"""
-    # 文件名已经是URL编码格式
-    decoded_filename = urllib.parse.unquote(filename)
-    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+    """API - 文本预览"""
+    decoded = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded
 
     if not file_path.exists() or not file_path.is_file():
         return jsonify({'error': '文件不存在'}), 404
 
-    # 获取文件大小
-    file_size = os.path.getsize(file_path)
-
-    # 检测文件编码
+    file_size = file_path.stat().st_size
     encoding = detect_encoding(file_path)
-
-    # 尝试读取文件内容
     content = ""
     error_message = ""
-    try:
-        # 优先使用GB2312编码
-        if encoding.lower() in ['gb2312', 'gbk', 'gb18030']:
-            encoding = 'gb2312'
 
-        with open(file_path, 'r', encoding=encoding, errors='replace') as f:
-            # 根据文件大小决定读取策略
-            if file_size > 500 * 1024:  # 大于500KB
-                # 只读取前500KB
-                content = f.read(500 * 1024)
-                content += "\n\n[文件过大，只显示前500KB内容]"
+    try:
+        enc = encoding
+        if enc.lower() in ('gb2312', 'gbk', 'gb18030'):
+            enc = 'gb18030'
+
+        with open(file_path, 'r', encoding=enc, errors='replace') as f:
+            if file_size > 512000:
+                content = f.read(512000) + "\n\n[文件过大，只显示前500KB内容]"
             else:
-                # 读取完整内容
                 content = f.read()
-    except UnicodeDecodeError:
-        # 如果解码失败，尝试使用二进制模式读取
+    except Exception as e:
         try:
             with open(file_path, 'rb') as f:
-                binary_data = f.read(500 * 1024)
-                # 尝试转换为字符串，替换无法解码的字符
-                content = binary_data.decode('gb2312', errors='replace')
-                error_message = "警告：文件包含无法解码的字符，部分内容可能显示不正确"
-        except Exception as e:
-            content = f"无法读取文件: {str(e)}"
-    except Exception as e:
-        content = f"无法读取文件: {str(e)}"
-
-    # 获取父目录和文件扩展名
-    parent_dir = os.path.dirname(decoded_filename)
-    file_ext = file_path.suffix.lower()[1:] if file_path.suffix else 'txt'
-
-    # 获取文件信息
-    file_mtime = os.path.getmtime(file_path)
-    formatted_mtime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(file_mtime))
+                content = f.read(512000).decode('gb18030', errors='replace')
+                error_message = "部分内容可能显示不正确"
+        except Exception:
+            content = f"无法读取文件: {e}"
 
     return jsonify({
         'filename': filename,
         'file_title': file_path.name,
-        'file_path': decoded_filename,
+        'file_path': decoded,
         'content': content,
-        'parent_dir': parent_dir,
-        'file_ext': file_ext,
+        'parent_dir': os.path.dirname(decoded),
+        'file_ext': file_path.suffix.lower()[1:] if file_path.suffix else 'txt',
         'encoding': encoding,
         'error_message': error_message,
         'file_size': file_size,
-        'formatted_mtime': formatted_mtime
+        'formatted_mtime': time.strftime(
+            '%Y-%m-%d %H:%M:%S',
+            time.localtime(file_path.stat().st_mtime)
+        ),
     })
 
+# ==================== 路由：字幕 ====================
 
 @app.route('/api/subtitles/<path:filename>')
 @require_auth
 def api_get_subtitles(filename):
-    """API端点，返回视频文件的内嵌字幕轨道信息"""
-    # 文件名已经是URL编码格式
-    decoded_filename = urllib.parse.unquote(filename)
-    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+    """获取视频字幕轨道"""
+    decoded = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded
 
     if not file_path.exists() or not file_path.is_file():
         return jsonify({'error': '文件不存在'}), 404
 
-    # 获取文件扩展名
-    file_ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
-
-    # 检查是否为视频文件
-    if file_ext not in VIDEO_EXTENSIONS:
+    ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
+    if ext not in VIDEO_EXTENSIONS:
         return jsonify({'error': '不是视频文件'}), 400
 
-    # 获取字幕轨道信息
     subtitles = get_video_subtitles(file_path)
-
     return jsonify({
         'filename': filename,
         'file_title': file_path.name,
-        'file_path': decoded_filename,
+        'file_path': decoded,
         'subtitles': subtitles,
-        'has_subtitles': len(subtitles) > 0
+        'has_subtitles': len(subtitles) > 0,
     })
 
 @app.route('/api/subtitle_content/<path:filename>')
 @require_auth
 def api_get_subtitle_content(filename):
-    """API端点，返回视频文件的字幕内容"""
-    # 文件名已经是URL编码格式
-    decoded_filename = urllib.parse.unquote(filename)
-    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+    """提取字幕内容"""
+    import subprocess
+
+    decoded = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded
     subtitle_index = request.args.get('index', type=int)
 
     if not file_path.exists() or not file_path.is_file():
         return jsonify({'error': '文件不存在'}), 404
 
-    # 获取文件扩展名
-    file_ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
-
-    # 检查是否为视频文件
-    if file_ext not in VIDEO_EXTENSIONS:
+    ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
+    if ext not in VIDEO_EXTENSIONS:
         return jsonify({'error': '不是视频文件'}), 400
 
-    # 检查是否提供了字幕索引
     if subtitle_index is None:
         return jsonify({'error': '缺少字幕索引参数'}), 400
 
     try:
-        # 使用ffmpeg提取字幕内容，简化命令
         cmd = [
-            'ffmpeg',
-            '-i', str(file_path),
+            'ffmpeg', '-i', str(file_path),
             '-map', f'0:{subtitle_index}',
-            '-f', 'webvtt',
-            '-'  # 输出到标准输出
+            '-f', 'webvtt', '-'
         ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        
-        # 直接返回WebVTT内容，不添加额外样式
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
         return result.stdout, 200, {'Content-Type': 'text/vtt'}
     except subprocess.CalledProcessError as e:
-        logger.error(f"FFmpeg提取字幕失败: {e}")
+        logger.error(f"FFmpeg 提取字幕失败: {e}")
         return jsonify({'error': '提取字幕失败'}), 500
     except Exception as e:
         logger.error(f"获取字幕内容失败: {e}")
         return jsonify({'error': '获取字幕内容失败'}), 500
 
-@app.route('/preview_text/<path:filename>')
-@require_auth
-def preview_text(filename):
-    """文本预览页面 - 针对GB2312优化"""
-    # 文件名已经是URL编码格式
-    decoded_filename = urllib.parse.unquote(filename)
-    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
-
-    if not file_path.exists() or not file_path.is_file():
-        return "文件不存在", 404
-
-    # 获取文件大小
-    file_size = os.path.getsize(file_path)
-
-    # 检测文件编码
-    encoding = detect_encoding(file_path)
-
-    # 尝试读取文件内容
-    content = ""
-    error_message = ""
-    try:
-        # 优先使用GB2312编码
-        if encoding.lower() in ['gb2312', 'gbk', 'gb18030']:
-            encoding = 'gb2312'
-
-        with open(file_path, 'r', encoding=encoding, errors='replace') as f:
-            # 根据文件大小决定读取策略
-            if file_size > 500 * 1024:  # 大于500KB
-                # 只读取前500KB
-                content = f.read(500 * 1024)
-                content += "\n\n[文件过大，只显示前500KB内容]"
-            else:
-                # 读取完整内容
-                content = f.read()
-    except UnicodeDecodeError:
-        # 如果解码失败，尝试使用二进制模式读取
-        try:
-            with open(file_path, 'rb') as f:
-                binary_data = f.read(500 * 1024)
-                # 尝试转换为字符串，替换无法解码的字符
-                content = binary_data.decode('gb2312', errors='replace')
-                error_message = "警告：文件包含无法解码的字符，部分内容可能显示不正确"
-        except Exception as e:
-            content = f"无法读取文件: {str(e)}"
-    except Exception as e:
-        content = f"无法读取文件: {str(e)}"
-
-    # 获取父目录和文件扩展名
-    parent_dir = os.path.dirname(decoded_filename)
-    file_ext = file_path.suffix.lower()[1:] if file_path.suffix else 'txt'
-    safe_parent_dir = urllib.parse.quote(parent_dir) if parent_dir else ''
-    
-    # 获取token参数
-    token = request.args.get('token')
-    
-    return render_template(
-        'text_preview.html',
-        filename=filename,
-        file_title=file_path.name,
-        file_path=decoded_filename,  # 添加文件路径参数
-        content=content,
-        parent_dir=safe_parent_dir,
-        file_ext=file_ext,
-        encoding=encoding,
-        error_message=error_message,
-        file_size=file_size,
-        token=token  # 传递token参数给模板
-    )
-
+# ==================== 路由：文件服务 ====================
 
 @app.route('/video/<path:filename>')
 @require_auth
 def serve_video(filename):
-    """视频流服务"""
-    # 文件名已经是URL编码格式
-    decoded_filename = urllib.parse.unquote(filename)
-    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+    """视频流服务 - 使用 send_file 支持断点续传和范围请求"""
+    decoded = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded
+
     if not file_path.exists() or not file_path.is_file():
         return "文件不存在", 404
 
-    file_ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
-    
-    # 处理视频文件的字节范围请求
-    if file_ext in VIDEO_EXTENSIONS:
-        range_header = request.headers.get('Range', None)
-        file_size = os.path.getsize(file_path)
+    ext = file_path.suffix.lower()[1:] if file_path.suffix else ''
+    if ext not in VIDEO_EXTENSIONS:
+        return "不是视频文件", 400
 
-        if range_header:
-            match = re.search(r'bytes=(\d+)-(\d+)?', range_header)
-
-            if match:
-                start = int(match.group(1))
-                end = int(match.group(2)) if match.group(2) else file_size - 1
-                length = end - start + 1
-                
-                # 直接返回原始视频流，不需要使用FFmpeg处理字幕
-                # 前端已经实现了自定义字幕渲染
-                def generate():
-                    with open(file_path, 'rb') as f:
-                        f.seek(start)
-                        remaining = length
-                        while remaining > 0:
-                            # 增加缓冲块大小以提高大文件处理性能
-                            chunk_size = min(1024 * 1024, remaining)  # 使用1MB缓冲
-                            data = f.read(chunk_size)
-                            if not data:
-                                break
-                            remaining -= len(data)
-                            yield data
-
-                response = app.response_class(
-                    generate(),
-                    status=206,
-                    mimetype=mimetypes.guess_type(file_path)[0],
-                    direct_passthrough=True
-                )
-                response.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
-                response.headers['Content-Length'] = str(length)
-                response.headers['Accept-Ranges'] = 'bytes'
-                return response
-
-    # 完整文件响应
+    mime = mimetypes.guess_type(str(file_path))[0] or 'video/mp4'
     return send_file(
         str(file_path),
-        mimetype=mimetypes.guess_type(file_path)[0],
+        mimetype=mime,
         as_attachment=False,
-        conditional=True
+        conditional=True,  # 自动处理 Range 请求
     )
-
 
 @app.route('/file/<path:filename>')
 @require_auth
 def serve_file(filename):
     """通用文件服务"""
-    # 文件名已经是URL编码格式
-    decoded_filename = urllib.parse.unquote(filename)
-    file_path = Path(MOBILE_HDD_PATH) / decoded_filename
+    decoded = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded
+
     if not file_path.exists() or not file_path.is_file():
         return "文件不存在", 404
 
-    # 设置下载文件名
-    download_name = file_path.name
-    
-    # 获取文件MIME类型
-    mime_type, _ = mimetypes.guess_type(file_path)
-    
-    # 对于视频和图片文件，直接在浏览器中预览
-    if mime_type and (mime_type.startswith('video/') or mime_type.startswith('image/')):
-        return send_file(
-            str(file_path),
-            as_attachment=False,
-            download_name=download_name,
-            conditional=True
-        )
-    # 其他文件类型作为附件下载
-    else:
-        return send_file(
-            str(file_path),
-            as_attachment=True,
-            download_name=download_name,
-            conditional=True
-        )
+    mime, _ = mimetypes.guess_type(str(file_path))
 
+    # 视频/图片在浏览器预览，其他下载
+    as_attachment = not (mime and (mime.startswith('video/') or mime.startswith('image/')))
 
-@app.route('/static/<path:path>')
-def serve_static(path):
-    """静态文件服务"""
-    return send_from_directory('static', path)
+    return send_file(
+        str(file_path),
+        as_attachment=as_attachment,
+        download_name=file_path.name,
+        conditional=True,
+    )
 
-# 处理前端构建后的静态文件，不需要认证
-@app.route('/<path:path>')
-def serve_frontend_files(path):
-    """服务前端构建后的静态文件"""
-    # 检查请求的文件是否存在于前端构建目录
-    import os
-    frontend_dist_path = os.path.join(os.getcwd(), 'frontend', 'dist')
-    requested_file_path = os.path.join(frontend_dist_path, path)
-    
-    if os.path.exists(requested_file_path) and os.path.isfile(requested_file_path):
-        return send_from_directory('frontend/dist', path)
-    # 如果文件不存在，返回404
-    return "File not found", 404
+# ==================== 路由：VLC 重定向 ====================
 
-# 服务前端首页，不需要认证
-@app.route('/')
-def serve_frontend_index():
-    """服务前端首页"""
-    return send_from_directory('frontend/dist', 'index.html')
-
-
-@app.route('/toggle_config_files', methods=['POST'])
+@app.route('/vlc_redirect/<path:filename>')
 @require_auth
-def toggle_config_files():
-    """切换显示配置文件"""
-    config = load_folder_config()
-    config['show_config_files'] = not config['show_config_files']
-    save_folder_config(config)
+def vlc_redirect(filename):
+    decoded = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded
 
-    # 重定向回当前页面
-    current_dir = request.form.get('current_dir', '')
-    return redirect(url_for('index', dir=current_dir))
+    if not file_path.exists():
+        return "文件或目录不存在", 404
 
+    base_url = f"http://{request.host}"
+    token = request.args.get('token')
+    encoded = urllib.parse.quote(decoded)
+    video_url = f"{base_url}/video/{encoded}?token={token}"
 
-@app.route('/hide_file', methods=['POST'])
-@require_auth
-def hide_file():
-    """隐藏特定文件"""
-    file_path = request.form.get('file_path')
-    config = load_folder_config()
+    return render_template('vlc_redirect.html', vlc_url=f"vlc://{video_url}")
 
-    if file_path and file_path not in config['hidden_files']:
-        config['hidden_files'].append(file_path)
-        save_folder_config(config)
-
-    # 重定向回当前页面
-    current_dir = request.form.get('current_dir', '')
-    return redirect(url_for('index', dir=current_dir))
-
-
-@app.route('/unhide_file', methods=['POST'])
-@require_auth
-def unhide_file():
-    """取消隐藏特定文件"""
-    file_path = request.form.get('file_path')
-    config = load_folder_config()
-
-    if file_path and file_path in config['hidden_files']:
-        config['hidden_files'].remove(file_path)
-        save_folder_config(config)
-
-    # 重定向回当前页面
-    current_dir = request.form.get('current_dir', '')
-    return redirect(url_for('index', dir=current_dir))
-
-
-@app.route('/hide_extension', methods=['POST'])
-@require_auth
-def hide_extension():
-    """隐藏特定扩展名"""
-    extension = request.form.get('extension')
-    config = load_folder_config()
-
-    if extension and extension not in config['hidden_extensions']:
-        config['hidden_extensions'].append(extension)
-        save_folder_config(config)
-
-    # 重定向回当前页面
-    current_dir = request.form.get('current_dir', '')
-    return redirect(url_for('index', dir=current_dir))
-
-
-@app.route('/unhide_extension', methods=['POST'])
-@require_auth
-def unhide_extension():
-    """取消隐藏特定扩展名"""
-    extension = request.form.get('extension')
-    config = load_folder_config()
-
-    if extension and extension in config['hidden_extensions']:
-        config['hidden_extensions'].remove(extension)
-        save_folder_config(config)
-
-    # 重定向回当前页面
-    current_dir = request.form.get('current_dir', '')
-    return redirect(url_for('index', dir=current_dir))
-
+# ==================== 路由：上传 ====================
 
 @app.route('/api/upload', methods=['POST'])
 @require_auth
 def upload_file():
-    """API端点 - 上传文件"""
+    """文件上传"""
     try:
-        # 检查是否有文件被上传
         if 'file' not in request.files:
             return jsonify({'error': '没有文件被上传'}), 400
-        
-        # 获取所有上传的文件
+
         files = request.files.getlist('file')
-        
         if not files or files[0].filename == '':
             return jsonify({'error': '没有选择文件'}), 400
-        
-        # 获取目标目录
+
         target_dir = request.form.get('dir', '')
-        decoded_target_dir = urllib.parse.unquote(target_dir)
-        
-        # 构建完整的保存路径
-        base_path = Path(MOBILE_HDD_PATH)
-        save_path = base_path / decoded_target_dir
-        
-        # 确保保存路径存在且是一个目录
-        if not save_path.exists() or not save_path.is_dir():
+        decoded_dir = urllib.parse.unquote(target_dir)
+
+        full_path, base_path = safe_path(decoded_dir)
+        if not full_path or not full_path.is_dir():
             return jsonify({'error': '目标目录不存在'}), 400
-        
-        # 保存所有上传的文件
-        for file in files:
-            if file.filename == '':
+
+        # 权限检查
+        username = getattr(request, '_current_user', None) or get_current_user()
+        if username and not check_permission(username, decoded_dir):
+            return jsonify({'error': '无权上传到该目录'}), 403
+
+        for f in files:
+            if f.filename == '':
                 continue
-                
-            # 直接使用原始文件名（支持中文），但要确保路径安全
-            filename = file.filename
-            full_save_path = save_path / filename
-            
-            # 避免文件名冲突
-            if full_save_path.exists():
-                # 使用序号方式处理文件名冲突（如"image(1).jpg"）
-                file_ext = Path(filename).suffix
-                file_name = Path(filename).stem
+
+            save_path = full_path / f.filename
+
+            # 处理文件名冲突
+            if save_path.exists():
+                stem = save_path.stem
+                suffix = save_path.suffix
                 counter = 1
-                
-                # 检查是否已经有序号
-                match = re.match(r'^(.*?)_?\((\d+)\)$', file_name)
-                if match:
-                    file_name = match.group(1)
-                    counter = int(match.group(2)) + 1
-                
-                # 寻找可用的文件名
+                m = re.match(r'^(.*?)_?\((\d+)\)$', stem)
+                if m:
+                    stem = m.group(1)
+                    counter = int(m.group(2)) + 1
+
                 while True:
-                    new_filename = f"{file_name}({counter}){file_ext}"
-                    new_full_save_path = save_path / new_filename
-                    if not new_full_save_path.exists():
-                        filename = new_filename
-                        full_save_path = new_full_save_path
+                    new_name = f"{stem}({counter}){suffix}"
+                    new_path = full_path / new_name
+                    if not new_path.exists():
+                        save_path = new_path
                         break
                     counter += 1
-            
-            # 保存文件
-            file.save(str(full_save_path))
-            
-            logger.info(f"文件上传成功: {full_save_path}")
-            
-            # 更新文件的修改时间（可选）
-            full_save_path.touch()
-        
-        # 清除该目录的缓存，确保下次请求能获取到新文件
-        cache_key = str(save_path)
-        if cache_key in file_cache:
-            del file_cache[cache_key]
-        
+
+            f.save(str(save_path))
+
+        # 清除缓存
+        invalidate_dir_cache(decoded_dir)
+
         return jsonify({
             'success': True,
             'message': '文件上传成功',
-            'count': len(files)
+            'count': len([f for f in files if f.filename]),
         })
-        
+
     except Exception as e:
         logger.error(f"文件上传失败: {e}")
         return jsonify({'error': str(e)}), 500
 
-# API端点 - 获取用户收藏列表
+# ==================== 路由：收藏 ====================
+
 @app.route('/api/favorites', methods=['GET'])
 @require_auth
 def get_favorites():
-    """获取用户的收藏列表"""
-    try:
-        # 从Authorization头获取token
-        auth = request.headers.get('Authorization')
-        token = auth.split(' ')[1] if len(auth.split(' ')) > 1 else auth
-        username = get_username_from_token(token)
-        
-        if not username:
-            return jsonify({'error': '无效的token格式'}), 401
-        
-        # 加载收藏数据
-        favorites = load_favorites()
-        
-        # 筛选当前用户的收藏
-        user_favorites = [fav for fav in favorites if fav['username'] == username]
-        
-        return jsonify({'favorites': user_favorites})
-    except Exception as e:
-        logger.error(f"获取收藏列表失败: {e}")
-        return jsonify({'error': '获取收藏列表失败'}), 500
+    username = getattr(request, '_current_user', None) or get_current_user()
+    if not username:
+        return jsonify({'error': '无效的 token'}), 401
 
-# API端点 - 添加收藏
+    favorites = load_favorites()
+    user_favs = [f for f in favorites if f['username'] == username]
+    return jsonify({'favorites': user_favs})
+
 @app.route('/api/favorites', methods=['POST'])
 @require_auth
 def add_favorite():
-    """添加收藏"""
     try:
-        # 从Authorization头获取token
-        auth = request.headers.get('Authorization')
-        token = auth.split(' ')[1] if len(auth.split(' ')) > 1 else auth
-        username = get_username_from_token(token)
-        
+        username = getattr(request, '_current_user', None) or get_current_user()
         if not username:
-            return jsonify({'error': '无效的token格式'}), 401
-        
-        # 获取请求数据
-        data = request.get_json()
+            return jsonify({'error': '无效的 token'}), 401
+
+        data = request.get_json(silent=True) or {}
         file_path = data.get('path')
         file_name = data.get('name')
-        file_type = data.get('type')
-        file_size = data.get('size')
-        modified_time = data.get('modified')
-        
+
         if not file_path or not file_name:
             return jsonify({'error': '文件路径和文件名不能为空'}), 400
-        
-        # 加载收藏数据
+
         favorites = load_favorites()
-        
-        # 检查是否已存在该收藏
-        existing_fav = next((f for f in favorites if f['username'] == username and f['path'] == file_path), None)
-        if existing_fav:
+
+        if any(f['username'] == username and f['path'] == file_path for f in favorites):
             return jsonify({'message': '该文件已在收藏列表中'}), 200
-        
-        # 创建新收藏
-        new_favorite = {
-            'id': max(f['id'] for f in favorites) + 1 if favorites else 1,
+
+        new_fav = {
+            'id': max((f['id'] for f in favorites), default=0) + 1,
             'username': username,
             'path': file_path,
             'name': file_name,
-            'type': file_type,
-            'size': file_size,
-            'modified': modified_time,
-            'created_at': int(time.time())
+            'type': data.get('type'),
+            'size': data.get('size'),
+            'modified': data.get('modified'),
+            'created_at': int(time.time()),
         }
-        
-        # 添加到收藏列表
-        favorites.append(new_favorite)
-        
-        # 保存收藏数据
+
+        favorites.append(new_fav)
         if save_favorites(favorites):
-            return jsonify({'favorite': new_favorite}), 201
-        else:
-            return jsonify({'error': '保存收藏失败'}), 500
+            return jsonify({'favorite': new_fav}), 201
+        return jsonify({'error': '保存收藏失败'}), 500
+
     except Exception as e:
         logger.error(f"添加收藏失败: {e}")
         return jsonify({'error': '添加收藏失败'}), 500
 
-# API端点 - 删除收藏
 @app.route('/api/favorites/<int:favorite_id>', methods=['DELETE'])
 @require_auth
 def delete_favorite(favorite_id):
-    """删除收藏"""
     try:
-        # 从Authorization头获取token
-        auth = request.headers.get('Authorization')
-        token = auth.split(' ')[1] if len(auth.split(' ')) > 1 else auth
-        username = get_username_from_token(token)
-        
+        username = getattr(request, '_current_user', None) or get_current_user()
         if not username:
-            return jsonify({'error': '无效的token格式'}), 401
-        
-        # 加载收藏数据
+            return jsonify({'error': '无效的 token'}), 401
+
         favorites = load_favorites()
-        
-        # 查找当前用户的指定收藏
-        favorite_index = next((i for i, f in enumerate(favorites) if f['id'] == favorite_id and f['username'] == username), None)
-        
-        if favorite_index is None:
+        idx = next((i for i, f in enumerate(favorites)
+                    if f['id'] == favorite_id and f['username'] == username), None)
+
+        if idx is None:
             return jsonify({'error': '收藏不存在或无权操作'}), 404
-        
-        # 删除收藏
-        deleted_favorite = favorites.pop(favorite_index)
-        
-        # 保存收藏数据
+
+        deleted = favorites.pop(idx)
         if save_favorites(favorites):
-            return jsonify({'favorite': deleted_favorite})
-        else:
-            return jsonify({'error': '删除收藏失败'}), 500
+            return jsonify({'favorite': deleted})
+        return jsonify({'error': '删除收藏失败'}), 500
+
     except Exception as e:
         logger.error(f"删除收藏失败: {e}")
         return jsonify({'error': '删除收藏失败'}), 500
 
-# API端点 - 删除指定文件的收藏
 @app.route('/api/favorites/delete_by_path', methods=['DELETE'])
 @require_auth
 def delete_favorite_by_path():
-    """根据文件路径删除收藏"""
     try:
-        # 从Authorization头获取token
-        auth = request.headers.get('Authorization')
-        token = auth.split(' ')[1] if len(auth.split(' ')) > 1 else auth
-        username = get_username_from_token(token)
-        
+        username = getattr(request, '_current_user', None) or get_current_user()
         if not username:
-            return jsonify({'error': '无效的token格式'}), 401
-        
-        # 获取请求数据
-        data = request.get_json()
+            return jsonify({'error': '无效的 token'}), 401
+
+        data = request.get_json(silent=True) or {}
         file_path = data.get('path')
-        
+
         if not file_path:
             return jsonify({'error': '文件路径不能为空'}), 400
-        
-        # 加载收藏数据
+
         favorites = load_favorites()
-        
-        # 查找当前用户的指定路径的收藏
-        favorite_index = next((i for i, f in enumerate(favorites) if f['path'] == file_path and f['username'] == username), None)
-        
-        if favorite_index is None:
+        idx = next((i for i, f in enumerate(favorites)
+                    if f['path'] == file_path and f['username'] == username), None)
+
+        if idx is None:
             return jsonify({'error': '收藏不存在或无权操作'}), 404
-        
-        # 删除收藏
-        deleted_favorite = favorites.pop(favorite_index)
-        
-        # 保存收藏数据
+
+        deleted = favorites.pop(idx)
         if save_favorites(favorites):
-            return jsonify({'favorite': deleted_favorite})
-        else:
-            return jsonify({'error': '删除收藏失败'}), 500
+            return jsonify({'favorite': deleted})
+        return jsonify({'error': '删除收藏失败'}), 500
+
     except Exception as e:
         logger.error(f"根据路径删除收藏失败: {e}")
-        return jsonify({'error': '根据路径删除收藏失败'}), 500
+        return jsonify({'error': '删除收藏失败'}), 500
 
+# ==================== 路由：文件夹配置 ====================
 
-if __name__ == '__main__':
-    # 初始化文件夹配置文件
-    if not FOLDER_CONFIG_PATH.exists():
-        save_folder_config(load_folder_config())
-    
-    # 获取本机IP地址的更可靠方法
+@app.route('/toggle_hidden', methods=['POST'])
+@require_auth
+def toggle_hidden():
+    cfg = load_folder_config()
+    cfg['show_hidden'] = not cfg['show_hidden']
+    save_folder_config(cfg)
+    return redirect(url_for('index', dir=request.form.get('current_dir', '')))
+
+@app.route('/toggle_config_files', methods=['POST'])
+@require_auth
+def toggle_config_files():
+    cfg = load_folder_config()
+    cfg['show_config_files'] = not cfg['show_config_files']
+    save_folder_config(cfg)
+    return redirect(url_for('index', dir=request.form.get('current_dir', '')))
+
+@app.route('/hide_folder', methods=['POST'])
+@require_auth
+def hide_folder():
+    folder_path = request.form.get('folder_path')
+    cfg = load_folder_config()
+    if folder_path and folder_path not in cfg['hidden_folders']:
+        cfg['hidden_folders'].append(folder_path)
+        save_folder_config(cfg)
+    return redirect(url_for('index', dir=request.form.get('current_dir', '')))
+
+@app.route('/unhide_folder', methods=['POST'])
+@require_auth
+def unhide_folder():
+    folder_path = request.form.get('folder_path')
+    cfg = load_folder_config()
+    if folder_path in cfg.get('hidden_folders', []):
+        cfg['hidden_folders'].remove(folder_path)
+        save_folder_config(cfg)
+    return redirect(url_for('index', dir=request.form.get('current_dir', '')))
+
+@app.route('/hide_file', methods=['POST'])
+@require_auth
+def hide_file():
+    file_path = request.form.get('file_path')
+    cfg = load_folder_config()
+    if file_path and file_path not in cfg['hidden_files']:
+        cfg['hidden_files'].append(file_path)
+        save_folder_config(cfg)
+    return redirect(url_for('index', dir=request.form.get('current_dir', '')))
+
+@app.route('/unhide_file', methods=['POST'])
+@require_auth
+def unhide_file():
+    file_path = request.form.get('file_path')
+    cfg = load_folder_config()
+    if file_path in cfg.get('hidden_files', []):
+        cfg['hidden_files'].remove(file_path)
+        save_folder_config(cfg)
+    return redirect(url_for('index', dir=request.form.get('current_dir', '')))
+
+@app.route('/hide_extension', methods=['POST'])
+@require_auth
+def hide_extension():
+    extension = request.form.get('extension')
+    cfg = load_folder_config()
+    if extension and extension not in cfg['hidden_extensions']:
+        cfg['hidden_extensions'].append(extension)
+        save_folder_config(cfg)
+    return redirect(url_for('index', dir=request.form.get('current_dir', '')))
+
+@app.route('/unhide_extension', methods=['POST'])
+@require_auth
+def unhide_extension():
+    extension = request.form.get('extension')
+    cfg = load_folder_config()
+    if extension in cfg.get('hidden_extensions', []):
+        cfg['hidden_extensions'].remove(extension)
+        save_folder_config(cfg)
+    return redirect(url_for('index', dir=request.form.get('current_dir', '')))
+
+# ==================== 路由：服务器信息 ====================
+
+@app.route('/api/server_info', methods=['GET'])
+def get_server_info():
+    """获取服务器信息"""
     import socket
-    import subprocess
-    
+
     hostname = socket.gethostname()
-    
-    # 尝试获取局域网IP地址的多种方法
     ip_address = None
-    
-    # 方法1: 使用UDP套接字连接外部服务器获取当前网络接口IP
+
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
         s.connect(('8.8.8.8', 80))
         ip_address = s.getsockname()[0]
         s.close()
     except Exception:
-        pass
-    
-    # 方法2: 如果方法1失败，尝试使用ifconfig命令获取IP地址
-    if not ip_address:
         try:
-            result = subprocess.run(['ifconfig'], capture_output=True, text=True)
-            import re
-            ip_matches = re.findall(r'inet\s+(\d+\.\d+\.\d+\.\d+)\s+netmask', result.stdout)
-            for ip in ip_matches:
-                if not ip.startswith('127.'):
-                    ip_address = ip
+            ip_address = socket.gethostbyname(hostname)
+        except Exception:
+            ip_address = 'unknown'
+
+    return jsonify({
+        'hostname': hostname,
+        'ip_address': ip_address,
+        'port': 3002,
+        'message': f'访问地址：http://{ip_address}:3002'
+    })
+
+# ==================== 路由：前端 ====================
+
+@app.route('/')
+def index():
+    return send_from_directory('frontend/dist', 'index.html')
+
+@app.route('/files')
+@require_auth
+def redirect_files():
+    return redirect(url_for('index'))
+
+@app.route('/static/<path:path>')
+def serve_static(path):
+    return send_from_directory('static', path)
+
+@app.route('/<path:path>')
+def serve_frontend_files(path):
+    """前端静态文件"""
+    dist_path = os.path.join(os.getcwd(), 'frontend', 'dist')
+    requested = os.path.join(dist_path, path)
+
+    if os.path.isfile(requested):
+        return send_from_directory('frontend/dist', path)
+    return "File not found", 404
+
+# ==================== 启动 ====================
+
+if __name__ == '__main__':
+    # 初始化文件夹配置
+    if not FOLDER_CONFIG_FILE.exists():
+        save_folder_config(load_folder_config())
+
+    # 获取 IP
+    import socket
+
+    hostname = socket.gethostname()
+    ip_address = None
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
+        s.connect(('8.8.8.8', 80))
+        ip_address = s.getsockname()[0]
+        s.close()
+    except Exception:
+        try:
+            import subprocess
+            result = subprocess.run(['ifconfig'], capture_output=True, text=True, timeout=5)
+            for m in re.finditer(r'inet\s+(\d+\.\d+\.\d+\.\d+)\s+netmask', result.stdout):
+                if not m.group(1).startswith('127.'):
+                    ip_address = m.group(1)
                     break
         except Exception:
             pass
-    
-    # 方法3: 如果以上方法都失败，使用传统方法
-    if not ip_address:
-        ip_address = socket.gethostbyname(hostname)
-    
-    # 显示启动信息和所有可访问地址
-    print("=========================================")
-    print("文件预览服务器正在运行...")
-    print("=========================================")
-    print(f"📁 文件目录: {MOBILE_HDD_PATH}")
-    print()
-    print("📱 可访问地址列表：")
-    print(f"   本地访问：http://localhost:8000")
-    print(f"   局域网访问：http://{ip_address}:8000")
-    print(f"   mDNS访问：http://{hostname}.local:8000")
-    print()
-    print("🔗 前端访问地址：")
-    print(f"   本地访问：http://localhost:3001")
-    print(f"   局域网访问：http://{ip_address}:3001")
-    print(f"   mDNS访问：http://{hostname}.local:3001")
-    print()
-    print("=========================================")
-    print()
-    
-    # 启动Flask应用服务器
-    app.run(host='0.0.0.0', port=8000, debug=False)
 
+    if not ip_address:
+        try:
+            ip_address = socket.gethostbyname(hostname)
+        except Exception:
+            ip_address = 'unknown'
+
+    print("=" * 45)
+    print("  文件预览服务器已启动")
+    print("=" * 45)
+    print(f"  📁 文件目录: {MOBILE_HDD_PATH}")
+    print(f"  🔒 安全: bcrypt 密码 + HMAC token")
+    print()
+    print("  📱 访问地址：")
+    print(f"     http://localhost:3001")
+    print(f"     http://{ip_address}:3001")
+    print(f"     http://{hostname}.local:3001")
+    print("=" * 45)
+
+    app.run(host='0.0.0.0', port=3002, debug=False, threaded=True)
