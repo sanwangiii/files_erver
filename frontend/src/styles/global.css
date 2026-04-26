@@ -1,67 +1,67 @@
 /* ============================================
    文件预览服务器 - 全局样式
-   2026 风格升级：活力渐变 + 毛玻璃 + 流畅动画
+   2026 风格升级：奶油暖棕 + 有机现代 + 噪点纹理
    ============================================ */
 
-/* ---------- 设计令牌（CSS 变量）---------- */
+/* ---------- 噪点纹理背景 ---------- */
 :root {
-  /* 主色调：清爽淡蓝渐变 */
-  --color-primary: #5b9ef5;
-  --color-primary-light: #89bffa;
-  --color-primary-dark: #3b82f6;
-  --color-primary-gradient: linear-gradient(180deg, #89bffa 0%, #5b9ef5 50%, #3b82f6 100%);
-  --color-primary-gradient-hover: linear-gradient(180deg, #5b9ef5 0%, #3b82f6 50%, #2563eb 100%);
+  /* 主色调：奶油暖棕系 - 温馨复古 */
+  --color-primary: #a67c52;
+  --color-primary-light: #c49a6c;
+  --color-primary-dark: #8a6542;
+  --color-primary-gradient: linear-gradient(180deg, #c49a6c 0%, #a67c52 50%, #8a6542 100%);
+  --color-primary-gradient-hover: linear-gradient(180deg, #a67c52 0%, #8a6542 50%, #6d4f36 100%);
 
-  /* 辅助渐变 */
-  --gradient-warm: linear-gradient(180deg, #f093fb 0%, #f5576c 100%);
-  --gradient-cool: linear-gradient(180deg, #4facfe 0%, #00f2fe 100%);
-  --gradient-sunset: linear-gradient(180deg, #fa709a 0%, #fee140 100%);
-  --gradient-ocean: linear-gradient(180deg, #5b9ef5 0%, #38bdf8 100%);
-  --gradient-mesh: radial-gradient(at 40% 20%, rgba(91, 158, 245, 0.08) 0px, transparent 50%),
-                   radial-gradient(at 80% 0%, rgba(56, 189, 248, 0.05) 0px, transparent 50%),
-                   radial-gradient(at 0% 50%, rgba(59, 130, 246, 0.04) 0px, transparent 50%);
+  /* 辅助渐变 - 奶油暖棕系 */
+  --gradient-warm: linear-gradient(180deg, #d4a574 0%, #b8936a 100%);
+  --gradient-cool: linear-gradient(180deg, #a8c4a0 0%, #8aa88a 100%);
+  --gradient-sunset: linear-gradient(180deg, #d4a08c 0%, #b8887a 100%);
+  --gradient-ocean: linear-gradient(180deg, #8ab4c4 0%, #6a94a8 100%);
+  --gradient-mesh: radial-gradient(at 40% 20%, rgba(166, 124, 82, 0.06) 0px, transparent 50%),
+                   radial-gradient(at 80% 0%, rgba(196, 154, 108, 0.04) 0px, transparent 50%),
+                   radial-gradient(at 0% 50%, rgba(138, 101, 66, 0.03) 0px, transparent 50%);
 
-  /* 背景 */
-  --color-bg: #f0f4f8;
-  --color-surface: rgba(255, 255, 255, 0.78);
-  --color-surface-solid: #ffffff;
-  --color-glass: rgba(255, 255, 255, 0.55);
-  --color-glass-border: rgba(255, 255, 255, 0.3);
+  /* 背景 - 奶油暖白色系 */
+  --color-bg: #faf6f1;
+  --color-surface: rgba(255, 252, 247, 0.85);
+  --color-surface-solid: #fffdf9;
+  --color-glass: rgba(255, 252, 247, 0.7);
+  --color-glass-border: rgba(255, 252, 247, 0.5);
 
-  /* 文字 */
-  --color-text: #1e3a5f;
-  --color-text-secondary: #64748b;
-  --color-text-tertiary: #94a3b8;
+  /* 文字 - 暖棕色系 */
+  --color-text: #4a3f35;
+  --color-text-secondary: #7a6b5a;
+  --color-text-tertiary: #a89888;
 
-  /* 边框 */
-  --color-border: rgba(91, 158, 245, 0.12);
-  --color-border-light: rgba(91, 158, 245, 0.06);
+  /* 边框 - 暖棕调 */
+  --color-border: rgba(166, 124, 82, 0.12);
+  --color-border-light: rgba(166, 124, 82, 0.06);
 
-  /* 功能色 */
-  --color-danger: #ef4444;
-  --color-danger-light: #fef2f2;
-  --color-success: #10b981;
-  --color-success-light: #ecfdf5;
-  --color-info: #3b82f6;
-  --color-warning: #f59e0b;
-  --color-folder: #f59e0b;
+  /* 功能色 - 暖棕协调版 */
+  --color-danger: #c97d7d;
+  --color-danger-light: #faf0f0;
+  --color-success: #7da67d;
+  --color-success-light: #f0faf0;
+  --color-info: #7d9aac;
+  --color-warning: #c4a06c;
+  --color-folder: #c49a6c;
 
-  /* 圆角 - 更圆润 */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-2xl: 24px;
+  /* 圆角 - 有机不规则 */
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 28px;
+  --radius-2xl: 32px;
   --radius-full: 50%;
 
-  /* 阴影 - 柔和有层次 */
-  --shadow-sm: 0 1px 2px rgba(91, 158, 245, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
-  --shadow-md: 0 4px 6px -1px rgba(91, 158, 245, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 10px 15px -3px rgba(91, 158, 245, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
-  --shadow-xl: 0 20px 25px -5px rgba(91, 158, 245, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
-  --shadow-glow: 0 0 20px rgba(91, 158, 245, 0.12);
-  --shadow-card: 0 2px 8px rgba(91, 158, 245, 0.05), 0 8px 24px rgba(0, 0, 0, 0.03);
-  --shadow-card-hover: 0 8px 30px rgba(91, 158, 245, 0.1), 0 12px 40px rgba(0, 0, 0, 0.05);
+  /* 阴影 - 暖棕调 */
+  --shadow-sm: 0 1px 2px rgba(138, 101, 66, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 6px -1px rgba(138, 101, 66, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(138, 101, 66, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(138, 101, 66, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  --shadow-glow: 0 0 20px rgba(166, 124, 82, 0.15);
+  --shadow-card: 0 4px 20px rgba(138, 101, 66, 0.08), 0 8px 24px rgba(0, 0, 0, 0.03);
+  --shadow-card-hover: 0 8px 30px rgba(138, 101, 66, 0.12), 0 12px 40px rgba(0, 0, 0, 0.05);
 
   /* 间距 */
   --space-xs: 4px;
@@ -117,13 +117,48 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--color-bg);
-  /* 微妙的渐变网格背景 */
+  /* 奶油暖棕渐变网格背景 + 噪点纹理 */
   background-image: var(--gradient-mesh);
   background-attachment: fixed;
   color: var(--color-text);
   font-size: var(--font-size-lg);
   line-height: 1.5;
   min-height: 100vh;
+}
+
+/* ---------- 噪点纹理覆盖 ---------- */
+.grain-overlay {
+  position: relative;
+}
+
+.grain-overlay::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  opacity: 0.6;
+  border-radius: inherit;
+}
+
+/* ---------- 有机形状 ---------- */
+.natural-shape {
+  border-radius: 30% 70% 50% 50% / 60% 40% 60% 40%;
+}
+
+.natural-card-shape {
+  border-radius: 24px 28px 26px 30px;
+}
+
+.natural-avatar {
+  border-radius: 40% 60% 55% 45% / 50% 60% 40% 50%;
+}
+
+.natural-icon-container {
+  border-radius: 35% 65% 60% 40% / 50% 55% 45% 50%;
 }
 
 /* ---------- 容器 ---------- */
@@ -146,7 +181,7 @@ body {
   box-shadow: 0 1px 0 var(--color-border-light), var(--shadow-sm);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 1000;
   border-bottom: 1px solid var(--color-glass-border);
 }
 
@@ -247,7 +282,7 @@ body {
   box-shadow: var(--shadow-xl);
   border: 1px solid var(--color-border);
   min-width: 220px;
-  z-index: 200;
+  z-index: 1000;
   animation: slideDown 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   overflow: hidden;
 }
@@ -346,20 +381,20 @@ body {
   align-items: center;
   justify-content: center;
   gap: var(--space-sm);
-  box-shadow: 0 2px 8px rgba(91, 158, 245, 0.25);
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.25);
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 
 .btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(91, 158, 245, 0.35);
+  box-shadow: 0 6px 20px rgba(217, 119, 6, 0.35);
   background: var(--color-primary-gradient-hover);
 }
 
 .btn:active {
   transform: translateY(0) scale(0.98);
-  box-shadow: 0 2px 8px rgba(91, 158, 245, 0.2);
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.2);
 }
 
 .btn:disabled {
@@ -408,7 +443,7 @@ label.btn {
   background: var(--color-surface);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border-radius: var(--radius-2xl);
+  border-radius: 32px 36px 34px 30px;
   box-shadow: var(--shadow-xl), var(--shadow-glow);
   border: 1px solid var(--color-glass-border);
   position: relative;
@@ -457,17 +492,17 @@ label.btn {
   width: 100%;
   padding: 14px var(--space-lg);
   border: 2px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: 20px 22px 21px 23px;
   font-size: var(--font-size-lg);
   transition: all var(--transition-smooth);
-  background-color: rgba(91, 158, 245, 0.03);
+  background-color: rgba(217, 119, 6, 0.03);
   -webkit-appearance: none;
 }
 
 .login-form input:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 4px rgba(91, 158, 245, 0.1), var(--shadow-glow);
+  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.1), var(--shadow-glow);
   background-color: var(--color-surface-solid);
 }
 
@@ -584,7 +619,7 @@ label.btn {
   background: var(--color-surface);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-radius: var(--radius-xl);
+  border-radius: 24px 26px 25px 27px;
   flex-wrap: wrap;
   gap: var(--space-md);
   border: 1px solid var(--color-border-light);
@@ -784,13 +819,14 @@ label.btn {
   background: var(--color-surface);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-radius: var(--radius-xl);
+  border-radius: 24px 28px 26px 30px;
   box-shadow: var(--shadow-card);
   padding: var(--space-xl);
   transition: all var(--transition-smooth);
   cursor: pointer;
   text-align: center;
   min-height: 140px;
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -860,13 +896,14 @@ label.btn {
   background: var(--color-surface);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-radius: var(--radius-xl);
+  border-radius: 26px 24px 30px 28px;
   box-shadow: var(--shadow-card);
   padding: var(--space-lg);
   transition: all var(--transition-smooth);
   min-height: 160px;
   display: flex;
   flex-direction: column;
+  position: relative;
   justify-content: space-between;
   align-items: center;
   border: 1px solid var(--color-border-light);
@@ -1595,6 +1632,39 @@ label.btn {
   animation: spin 0.8s linear infinite;
 }
 
+/* ---------- 单张图片加载中 ---------- */
+.reader-image-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 1;
+}
+
+.reader-image-loading .reader-spinner {
+  width: 32px;
+  height: 32px;
+  border-width: 2px;
+}
+
+/* 图片加载动画 */
+.reader-image,
+.reader-page-image {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.reader-image.loaded,
+.reader-page-image.loaded {
+  opacity: 1;
+}
+
 /* ---------- 错误 ---------- */
 .reader-error {
   display: flex;
@@ -1815,6 +1885,8 @@ label.btn {
   display: flex;
   justify-content: center;
   margin-bottom: 2px;
+  position: relative;
+  min-height: 200px;
 }
 
 .reader-image {
@@ -1852,6 +1924,7 @@ label.btn {
   width: 100%;
   height: 100%;
   padding: var(--space-lg);
+  position: relative;
 }
 
 .reader-page-image {

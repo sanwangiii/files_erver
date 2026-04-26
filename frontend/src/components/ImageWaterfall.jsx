@@ -25,6 +25,9 @@ function ImageWaterfall() {
   // 翻页模式当前页
   const [currentPage, setCurrentPage] = useState(0);
 
+  // 每张图片的加载状态
+  const [imageLoading, setImageLoading] = useState({});
+
   // 工具栏显示/隐藏
   const [showToolbar, setShowToolbar] = useState(true);
   const [showModeMenu, setShowModeMenu] = useState(false);
@@ -351,11 +354,20 @@ function ImageWaterfall() {
           <div className="reader-scroll-images">
             {images.map((image, index) => (
               <div key={image.path} className="reader-image-slot" data-index={index}>
+                {/* 加载中指示器 */}
+                {imageLoading[index] !== false && (
+                  <div className="reader-image-loading">
+                    <div className="reader-spinner"></div>
+                    <span>加载中...</span>
+                  </div>
+                )}
                 <img
                   src={image.preview_url}
                   alt={image.name}
-                  className="reader-image"
+                  className={`reader-image ${imageLoading[index] === false ? 'loaded' : ''}`}
                   loading={index < 3 ? 'eager' : 'lazy'}
+                  onLoad={() => setImageLoading(prev => ({ ...prev, [index]: false }))}
+                  onLoadStart={() => setImageLoading(prev => ({ ...prev, [index]: true }))}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleImageTap(image, e);
@@ -373,10 +385,19 @@ function ImageWaterfall() {
           <div className="reader-page-view">
             {images[currentPage] && (
               <div className="reader-page-image-wrapper">
+                {/* 加载中指示器 */}
+                {imageLoading[currentPage] !== false && (
+                  <div className="reader-image-loading">
+                    <div className="reader-spinner"></div>
+                    <span>加载中...</span>
+                  </div>
+                )}
                 <img
                   src={images[currentPage].preview_url}
                   alt={images[currentPage].name}
-                  className="reader-page-image"
+                  className={`reader-page-image ${imageLoading[currentPage] === false ? 'loaded' : ''}`}
+                  onLoad={() => setImageLoading(prev => ({ ...prev, [currentPage]: false }))}
+                  onLoadStart={() => setImageLoading(prev => ({ ...prev, [currentPage]: true }))}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleImageTap(images[currentPage], e);

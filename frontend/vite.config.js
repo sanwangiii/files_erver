@@ -7,7 +7,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3001,
     historyApiFallback: true,
-    allowedHosts: ['localhost', 'sanwangdemac-mini.local', 'sanwangi.file'],
+    allowedHosts: true,
     proxy: {
       // 专门处理/files和/preview路径，确保它们不会被代理到后端服务器
       '^/(files|preview)(.*)$': {

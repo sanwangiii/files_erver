@@ -3,7 +3,7 @@
     {
       "id": 1,
       "username": "sanwangi",
-      "password": "$2b$12$bnyW0FHweT9uPQvUZ2IH/uGOmSW0msl1puDnvefllwRGAJVTLu.KG",
+      "password": "$2b$10$Vn/rWYfR/MyDi1JWqkUNDe/y7WJal/m67dMFnZT9/bJegS0x0bX1i",
       "isAdmin": true,
       "permissions": [
         "*"
