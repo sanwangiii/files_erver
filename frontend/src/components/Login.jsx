@@ -5,7 +5,7 @@ function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const { handleLogin } = useContext(AuthContext)
 
@@ -28,8 +28,11 @@ function Login() {
       return
     }
 
+    // 防重复提交
+    if (loading) return
+    setLoading(true)
+
     try {
-      // 向后端发送登录请求
       const response = await fetch('/api/login', {
         method: 'POST',
         headers: {
@@ -44,69 +47,77 @@ function Login() {
       const data = await response.json()
 
       if (response.ok && data.user) {
-        // 创建一个不包含密码的用户对象用于登录
         const userWithoutPassword = {
           ...data.user,
-          password: undefined // 移除密码字段
+          password: undefined
         }
-        // 存储上次登录的用户名
         localStorage.setItem('lastUsername', username)
         handleLogin(userWithoutPassword)
       } else {
         setError(data.error || '用户名或密码错误')
-        // 清空密码字段
         setPassword('')
       }
     } catch (error) {
-      console.error('登录请求失败:', error)
       setError('登录失败，请检查网络连接或稍后重试')
-      // 清空密码字段
       setPassword('')
+    } finally {
+      setLoading(false)
     }
-  }, [username, password, handleLogin])
+  }, [username, password, handleLogin, loading])
 
   return (
-    <div className="login-form">
-      <h2>文件预览服务器登录</h2>
-      {error && <div className="error-message">{error}</div>}
-      <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label htmlFor="username">用户名</label>
-          <input
-            type="text"
-            id="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="password">密码</label>
-          <div className="password-input-container">
-            <input
-              type={showPassword ? "text" : "password"}
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="请输入密码"
-            />
-            <button
-              type="button"
-              className="toggle-password-btn"
-              onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? "隐藏密码" : "显示密码"}
-            >
-              {showPassword ? (
-                <i className="fas fa-eye-slash"></i>
-              ) : (
-                <i className="fas fa-eye"></i>
-              )}
-            </button>
+    <div className="login-page">
+      <div className="login-form">
+        <div className="login-brand">
+          <div className="login-brand-icon">
+            <i className="fa-solid fa-server"></i>
           </div>
+          <h3>局域网文件预览服务</h3>
         </div>
-        <button type="submit" className="btn">登录</button>
-      </form>
+        <h2>欢迎回来</h2>
+        {error && <div className="error-message">{error}</div>}
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="username">用户名</label>
+            <input
+              type="text"
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="请输入用户名"
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="password">密码</label>
+            <div className="password-input-container">
+              <input
+                type={showPassword ? "text" : "password"}
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="请输入密码"
+              />
+              <button
+                type="button"
+                className="toggle-password-btn"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "隐藏密码" : "显示密码"}
+              >
+                {showPassword ? (
+                  <i className="fas fa-eye-slash"></i>
+                ) : (
+                  <i className="fas fa-eye"></i>
+                )}
+              </button>
+            </div>
+          </div>
+          <button type="submit" className="btn" disabled={loading}>
+            {loading ? '登录中...' : '登录'}
+          </button>
+        </form>
+      </div>
     </div>
   )
 }

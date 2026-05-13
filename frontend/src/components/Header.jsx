@@ -42,7 +42,7 @@ function Header() {
   return (
     <header className="header">
       <div className="navbar">
-        <h1>文件预览服务器</h1>
+        <h1><i className="fa-solid fa-server" style={{ marginRight: '10px', fontSize: '16px', opacity: 0.7 }}></i>文件预览服务器</h1>
         {isAuthenticated && (
           <>
             {/* 桌面端导航 */}

@@ -374,7 +374,7 @@ function Admin() {
                     编辑
                   </button>
                   <button 
-                    className="btn btn-secondary"
+                    className="btn btn-danger"
                     onClick={() => handleDeleteUser(user.id)}
                   >
                     删除
@@ -410,7 +410,7 @@ function Admin() {
                 <button className="btn" onClick={() => handleEditUser(user)}>
                   编辑
                 </button>
-                <button className="btn btn-secondary" onClick={() => handleDeleteUser(user.id)}>
+                <button className="btn btn-danger" onClick={() => handleDeleteUser(user.id)}>
                   删除
                 </button>
               </div>

@@ -6,7 +6,7 @@ import { AuthContext } from '../App';
 import '../styles/global.css';
 
 const FileList = () => {
-  const { isAuthenticated, currentUser, addViewedFile, isFileViewed, addFavorite, removeFavorite, isFileFavorite } = useContext(AuthContext);
+  const { isAuthenticated, currentUser, addViewedFile, isFileViewed, addFavorite, removeFavorite, isFileFavorite, navigate } = useContext(AuthContext);
   const [files, setFiles] = useState([]);
   const [folders, setFolders] = useState([]);
   const [currentPath, setCurrentPath] = useState(() => {
@@ -38,13 +38,8 @@ const FileList = () => {
   // 监听URL变化
   useEffect(() => {
     const handleUrlChange = () => {
-      // 从URL查询参数中获取dir值
       const searchParams = new URLSearchParams(window.location.search);
       const dir = searchParams.get('dir') || '';
-      console.log('=== URL变化 ===');
-      console.log('当前路径:', window.location.pathname);
-      console.log('搜索参数:', window.location.search);
-      console.log('解析的dir参数:', dir);
       setCurrentPath(dir);
     };
 
@@ -133,16 +128,23 @@ const FileList = () => {
   // 加载文件和文件夹数据
   useEffect(() => {
     fetchFiles()
-    
-    // 恢复滚动位置
-    const savedScrollPosition = sessionStorage.getItem('scrollPosition')
-    if (savedScrollPosition) {
-      setTimeout(() => {
-        window.scrollTo(0, parseInt(savedScrollPosition, 10))
-        sessionStorage.removeItem('scrollPosition')
-      }, 100)
-    }
   }, [currentPath, sortBy, sortOrder])
+
+  // 数据加载完成后恢复滚动位置（从预览页返回时）
+  const prevLoading = useRef(loading)
+  useEffect(() => {
+    // 只在 loading 从 true → false（数据刚加载完）时恢复
+    if (prevLoading.current && !loading) {
+      const savedY = sessionStorage.getItem('fileListScrollY')
+      if (savedY) {
+        sessionStorage.removeItem('fileListScrollY')
+        requestAnimationFrame(() => {
+          window.scrollTo(0, parseInt(savedY, 10))
+        })
+      }
+    }
+    prevLoading.current = loading
+  }, [loading])
 
   // 当路径变化时，更新URL查询参数
   useEffect(() => {
@@ -182,30 +184,25 @@ const FileList = () => {
     return date.toLocaleString();
   };
 
-  // 获取文件图标
+  // 获取文件图标（使用主题协调色）
   const getFileIcon = (fileType) => {
     switch (fileType) {
       case 'video':
-        return <i className="fa-solid fa-video" style={{ color: '#e74c3c' }}></i>;
+        return <i className="fa-solid fa-video" style={{ color: 'var(--color-file-video)' }}></i>;
       case 'text':
-        return <i className="fa-solid fa-file-lines" style={{ color: '#3498db' }}></i>;
+        return <i className="fa-solid fa-file-lines" style={{ color: 'var(--color-file-text)' }}></i>;
       case 'image':
-        return <i className="fa-solid fa-image" style={{ color: '#27ae60' }}></i>;
+        return <i className="fa-solid fa-image" style={{ color: 'var(--color-file-image)' }}></i>;
       default:
-        return <i className="fa-solid fa-file" style={{ color: '#95a5a6' }}></i>;
+        return <i className="fa-solid fa-file" style={{ color: 'var(--color-file-other)' }}></i>;
     }
   };
 
   // 处理排序
   const handleSort = (newSortBy) => {
-    // console.log('Original handleSort called with newSortBy:', newSortBy);
-    // console.log('Current sortBy:', sortBy, 'Current sortOrder:', sortOrder);
     if (sortBy === newSortBy) {
-      // const newSortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
-      // console.log('Changing sortOrder to:', newSortOrder);
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
-      // console.log('Changing sortBy to:', newSortBy, 'and sortOrder to: asc');
       setSortBy(newSortBy);
       setSortOrder('asc');
     }
@@ -270,28 +267,24 @@ const FileList = () => {
     return 0
   })
 
+  // 保存当前滚动位置
+  const saveScrollPosition = () => {
+    sessionStorage.setItem('fileListScrollY', String(window.scrollY))
+  }
+
   // 处理文件预览
   const handlePreview = (file) => {
-    // 标记文件为已查阅
     addViewedFile(file.path)
     
     if (file.type === 'image' || file.type === 'text' || file.type === 'video') {
-      // 图片、文本或视频文件，跳转到预览页面
-      // 使用传统的页面跳转方式，确保浏览器正确处理历史记录
       const searchParams = new URLSearchParams()
       searchParams.set('name', file.name)
       searchParams.set('path', file.path)
       searchParams.set('type', file.type)
-      const previewUrl = `/preview?${searchParams.toString()}`
-      
-      // 保存当前滚动位置
-      const scrollPosition = window.scrollY
-      sessionStorage.setItem('scrollPosition', scrollPosition.toString())
-      
-      // 使用传统的页面跳转方式
-      window.location.href = previewUrl
+      searchParams.set('dir', currentPath) // 传递当前目录，用于播放列表
+      saveScrollPosition()
+      navigate(`/preview?${searchParams.toString()}`)
     } else {
-      // 其他类型，显示提示信息
       setAlertType('info');
       setAlertMessage('暂不支持该类型文件的预览');
       setShowAlert(true);
@@ -300,27 +293,11 @@ const FileList = () => {
   
   // 处理瀑布预览
   const handleWaterfallPreview = () => {
-    // 跳转到瀑布预览页面
     const searchParams = new URLSearchParams()
     searchParams.set('path', currentPath)
-    const waterfallUrl = `/waterfall?${searchParams.toString()}`
-    
-    console.log('=== 瀑布预览按钮点击 ===');
-    console.log('当前路径:', currentPath);
-    console.log('构建的瀑布预览URL:', waterfallUrl);
-    console.log('完整URL:', window.location.origin + waterfallUrl);
-    
-    // 保存当前滚动位置
-    const scrollPosition = window.scrollY
-    sessionStorage.setItem('scrollPosition', scrollPosition.toString())
-    
-    // 使用传统的页面跳转方式
-    window.location.href = waterfallUrl
+    saveScrollPosition()
+    navigate(`/waterfall?${searchParams.toString()}`)
   }
-  
-
-  
-
 
   // 处理文件夹点击
   const handleFolderClick = (folderName) => {
@@ -338,63 +315,45 @@ const FileList = () => {
 
   // 检查用户是否有上传权限
   const hasUploadPermission = () => {
-    console.log('检查上传权限:', currentUser, '当前路径:', currentPath);
     if (!currentUser) {
-      console.log('没有当前用户');
       return false;
     }
     if (currentUser.isAdmin) {
-      console.log('是管理员，有上传权限');
       return true;
     }
     if (currentUser.permissions.includes('*')) {
-      console.log('有通配符权限，有上传权限');
       return true;
     }
     
-    // 检查当前路径是否在用户权限中
     const hasPathPermission = currentUser.permissions.includes(currentPath);
     const hasRootPermission = currentUser.permissions.includes('');
     const hasParentPermission = currentUser.permissions.some(permission => 
       currentPath.startsWith(permission + '/')
     );
     
-    console.log('路径权限:', hasPathPermission, '根目录权限:', hasRootPermission, '父文件夹权限:', hasParentPermission);
-    
     return hasPathPermission || hasRootPermission || hasParentPermission;
   }
 
   // 处理文件选择
   const handleFileSelect = (e) => {
-    console.log('文件选择事件触发:', e);
     const selectedFiles = Array.from(e.target.files);
-    console.log('选择的文件数量:', selectedFiles.length);
     
     if (selectedFiles.length > 0) {
-      // 依次上传每个文件
-      selectedFiles.forEach((file, index) => {
-        console.log('上传文件', index + 1, '/', selectedFiles.length, ':', file.name, '大小:', file.size);
+      selectedFiles.forEach((file) => {
         handleUpload(file);
       });
-    } else {
-      console.log('没有选择文件');
     }
   }
 
   // 处理文件上传
   const handleUpload = (fileToUpload) => {
-    console.log('handleUpload被调用，fileToUpload:', fileToUpload, 'hasUploadPermission:', hasUploadPermission());
     if (!fileToUpload) {
-      console.log('没有要上传的文件');
       return;
     }
     
     if (!hasUploadPermission()) {
-      console.log('没有上传权限');
       return;
     }
-    
-    console.log('开始上传文件:', fileToUpload.name, '大小:', fileToUpload.size);
     
     // 为当前文件创建唯一ID
     const fileId = Date.now() + Math.random().toString(36).substr(2, 9);
@@ -413,19 +372,14 @@ const FileList = () => {
     formData.append('dir', currentPath);
     
     const user = currentUser || JSON.parse(localStorage.getItem('user'));
-    console.log('上传用户:', user);
     
     // 使用XMLHttpRequest来实现上传进度
     const xhr = new XMLHttpRequest();
     
     // 监听上传进度
     xhr.upload.addEventListener('progress', (event) => {
-      console.log('上传进度事件:', event.loaded, '/', event.total, '可计算:', event.lengthComputable);
       if (event.lengthComputable) {
         const progress = Math.round((event.loaded / event.total) * 100);
-        console.log('上传进度百分比:', progress);
-        
-        // 更新该文件的进度
         setUploadingFiles(prev => prev.map(file => 
           file.id === fileId ? { ...file, progress } : file
         ));
@@ -434,23 +388,16 @@ const FileList = () => {
     
     // 监听完成事件
     xhr.addEventListener('load', () => {
-      console.log('上传完成，状态码:', xhr.status);
-      console.log('上传响应:', xhr.responseText);
       if (xhr.status === 200) {
-        // 更新文件上传状态为完成
         setUploadingFiles(prev => prev.map(file => 
           file.id === fileId ? { ...file, uploading: false } : file
         ));
         
-        // 检查是否所有文件都上传完成
         setTimeout(() => {
           setUploadingFiles(prev => {
             const remainingUploads = prev.filter(file => file.id !== fileId);
             if (remainingUploads.length === 0) {
-              // 最后一个文件上传完成，重新加载文件列表
               fetchFiles();
-              
-              // 显示成功消息
               setAlertMessage('所有文件上传成功！');
               setAlertType('success');
               setShowAlert(true);
@@ -462,19 +409,15 @@ const FileList = () => {
         let errorMessage;
         try {
           const error = JSON.parse(xhr.responseText);
-          console.error('上传失败:', error);
           errorMessage = error.message || '未知错误';
         } catch (e) {
-          console.error('上传失败:', xhr.responseText);
           errorMessage = xhr.responseText;
         }
         
-        // 更新文件上传状态为错误
         setUploadingFiles(prev => prev.map(file => 
           file.id === fileId ? { ...file, uploading: false, error: errorMessage } : file
         ));
         
-        // 显示错误消息
         setAlertMessage(`文件上传失败: ${fileToUpload.name} - ${errorMessage}`);
         setAlertType('error');
         setShowAlert(true);
@@ -483,15 +426,12 @@ const FileList = () => {
     
     // 监听错误事件
     xhr.addEventListener('error', () => {
-      console.error('上传出错:', xhr.responseText);
       const errorMessage = xhr.responseText || '网络错误';
       
-      // 更新文件上传状态为错误
       setUploadingFiles(prev => prev.map(file => 
         file.id === fileId ? { ...file, uploading: false, error: errorMessage } : file
       ));
       
-      // 显示错误消息
       setAlertMessage(`文件上传出错: ${fileToUpload.name} - ${errorMessage}`);
       setAlertType('error');
       setShowAlert(true);
@@ -499,24 +439,16 @@ const FileList = () => {
     
     // 监听超时事件
     xhr.addEventListener('timeout', () => {
-      console.error('上传超时');
-      
-      // 更新文件上传状态为错误
       setUploadingFiles(prev => prev.map(file => 
         file.id === fileId ? { ...file, uploading: false, error: '上传超时' } : file
       ));
       
-      // 显示错误消息
       setAlertMessage(`文件上传超时: ${fileToUpload.name}`);
       setAlertType('error');
       setShowAlert(true);
     });
     
-    // 设置超时时间为30秒
     xhr.timeout = 30000;
-    
-    // 发送请求
-    console.log('发送上传请求到:', '/api/upload');
     xhr.open('POST', '/api/upload', true);
     xhr.setRequestHeader('Authorization', `Bearer ${user?.token || ''}`);
     xhr.send(formData);
@@ -566,20 +498,28 @@ const FileList = () => {
 
   // 切换下拉菜单显示
   const toggleDropdown = () => {
-    // console.log('toggleDropdown called, current showDropdown:', showDropdown);
     setShowDropdown(!showDropdown);
   };
 
   // 处理排序项点击，点击后关闭下拉菜单
   const handleSortItemClick = (newSortBy) => {
-    // console.log('handleSortItemClick called with newSortBy:', newSortBy);
     handleSort(newSortBy);
     setShowDropdown(false);
   };
 
   return (
     <div className="file-list-container">
-      {loading && <div className="loading">加载中...</div>}
+      {loading && (
+        <div className="loading">
+          <div className="loading-spinner"></div>
+          <div>加载中...</div>
+          <div className="loading-dots">
+            <div className="loading-dot"></div>
+            <div className="loading-dot"></div>
+            <div className="loading-dot"></div>
+          </div>
+        </div>
+      )}
       <div className="sort-controls">
         <div className="sort-options">
           <div className="sort-dropdown" ref={dropdownRef}>
@@ -678,7 +618,9 @@ const FileList = () => {
       </div>
         
         <div className="current-path">
-          当前路径: {currentPath ? currentPath : '根目录'}
+          <i className="fa-solid fa-location-dot"></i>
+          <span className="current-path-label">路径:</span>
+          <span className="current-path-value">{currentPath ? currentPath : '根目录'}</span>
         </div>
 
       {folders.length > 0 && (
@@ -706,47 +648,61 @@ const FileList = () => {
         </div>
       )}
 
-      {sortedFiles.length > 0 && <h2>文件</h2>}
-      <div className="file-grid">
-        {sortedFiles.map(file => (
-          <div key={file.path} className="file-card">
-            <div className="file-icon">
-              {getFileIcon(file.type)}
-            </div>
-            <div className="file-name">
-              <div className="file-name-container">
-                <span className="file-name-text">{file.name}</span>
-                {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
+      {sortedFiles.length > 0 && <div className="section-title"><i className="fa-solid fa-file"></i> 文件</div>}
+      {sortedFiles.length > 0 ? (
+        <div className="file-grid">
+          {sortedFiles.map(file => (
+            <div key={file.path} className={`file-card type-${file.type}`}>
+              <div className="file-icon">
+                {getFileIcon(file.type)}
+              </div>
+              <div className="file-name">
+                <div className="file-name-container">
+                  <span className="file-name-text">{file.name}</span>
+                  {isFileViewed(file.path) && <span className="viewed-badge">已查阅</span>}
+                </div>
+              </div>
+              <div className="file-meta">
+                <div className="file-meta-row"><i className="fa-solid fa-hard-drive"></i> 大小: {formatSize(file.size)}</div>
+                <div className="file-meta-row"><i className="fa-regular fa-clock"></i> 修改: {formatTime(file.modified)}</div>
+                <div className="file-meta-row"><i className="fa-solid fa-tag"></i> 类型: {file.type}</div>
+              </div>
+              <div className="file-actions">
+                <button 
+                  className="btn" 
+                  onClick={() => handlePreview(file)}
+                >
+                  预览
+                </button>
+                <button 
+                  className={`btn ${isFileFavorite(file.path) ? 'btn-danger' : 'btn-primary'}`} 
+                  onClick={() => {
+                    if (isFileFavorite(file.path)) {
+                      removeFavorite(file.path)
+                    } else {
+                      addFavorite(file)
+                    }
+                  }}
+                >
+                  {isFileFavorite(file.path) ? '取消收藏' : '收藏'}
+                </button>
               </div>
             </div>
-            <div className="file-meta">
-              <div>大小: {formatSize(file.size)}</div>
-              <div>修改时间: {formatTime(file.modified)}</div>
-              <div>类型: {file.type}</div>
+          ))}
+        </div>
+      ) : (
+        folders.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <i className="fa-solid fa-folder-open"></i>
             </div>
-            <div className="file-actions">
-              <button 
-                className="btn" 
-                onClick={() => handlePreview(file)}
-              >
-                预览
-              </button>
-              <button 
-                className={`btn ${isFileFavorite(file.path) ? 'btn-danger' : 'btn-primary'}`} 
-                onClick={() => {
-                  if (isFileFavorite(file.path)) {
-                    removeFavorite(file.path)
-                  } else {
-                    addFavorite(file)
-                  }
-                }}
-              >
-                {isFileFavorite(file.path) ? '取消收藏' : '收藏'}
-              </button>
+            <div className="empty-state-title">暂无内容</div>
+            <div className="empty-state-desc">
+              当前文件夹为空，或者您没有访问权限
             </div>
           </div>
-        ))}
-      </div>
+        )
+      )}
 
       {currentPath && (
         <button 

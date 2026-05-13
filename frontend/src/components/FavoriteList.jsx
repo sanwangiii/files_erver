@@ -5,7 +5,7 @@ function FavoriteList() {
   // 基础URL使用空字符串，这样会使用相对路径，从而利用Vite的代理配置
   const BASE_URL = '';
   
-  const { favoriteFiles, removeFavorite, isFileViewed, addViewedFile } = useContext(AuthContext)
+  const { favoriteFiles, removeFavorite, isFileViewed, addViewedFile, navigate } = useContext(AuthContext)
   
   // 自定义弹窗状态
   const [showAlert, setShowAlert] = useState(false)
@@ -30,44 +30,44 @@ function FavoriteList() {
     const date = new Date(timestamp)
     return date.toLocaleString()
   }
-  
-  // 获取文件图标
+
+  // 恢复滚动位置（从预览页返回时）
+  useEffect(() => {
+    const savedY = sessionStorage.getItem('favoritesScrollY')
+    if (savedY) {
+      sessionStorage.removeItem('favoritesScrollY')
+      requestAnimationFrame(() => {
+        window.scrollTo(0, parseInt(savedY, 10))
+      })
+    }
+  }, [])
+  // 获取文件图标（使用主题协调色）
   const getFileIcon = (fileType) => {
     switch (fileType) {
       case 'video':
-        return <i className="fa-solid fa-video" style={{ color: '#e74c3c' }}></i>
+        return <i className="fa-solid fa-video" style={{ color: 'var(--color-file-video)' }}></i>
       case 'text':
-        return <i className="fa-solid fa-file-lines" style={{ color: '#3498db' }}></i>
+        return <i className="fa-solid fa-file-lines" style={{ color: 'var(--color-file-text)' }}></i>
       case 'image':
-        return <i className="fa-solid fa-image" style={{ color: '#27ae60' }}></i>
+        return <i className="fa-solid fa-image" style={{ color: 'var(--color-file-image)' }}></i>
       default:
-        return <i className="fa-solid fa-file" style={{ color: '#95a5a6' }}></i>
+        return <i className="fa-solid fa-file" style={{ color: 'var(--color-file-other)' }}></i>
     }
   }
   
   // 处理文件预览
   const handlePreview = (file) => {
-    // 标记文件为已查阅
     addViewedFile(file.path)
     
     if (file.type === 'image' || file.type === 'text' || file.type === 'video') {
-      // 图片、文本或视频文件，跳转到预览页面
-      // 使用传统的页面跳转方式，确保浏览器正确处理历史记录
       const searchParams = new URLSearchParams()
       searchParams.set('name', file.name)
       searchParams.set('path', file.path)
       searchParams.set('type', file.type)
-      searchParams.set('from', 'favorites') // 添加来源参数
-      const previewUrl = `/preview?${searchParams.toString()}`
-      
-      // 保存当前滚动位置
-      const scrollPosition = window.scrollY
-      sessionStorage.setItem('scrollPosition', scrollPosition.toString())
-      
-      // 使用传统的页面跳转方式
-      window.location.href = previewUrl
+      searchParams.set('from', 'favorites')
+      sessionStorage.setItem('favoritesScrollY', String(window.scrollY))
+      navigate(`/preview?${searchParams.toString()}`)
     } else {
-      // 其他类型，显示提示信息
       setAlertType('info')
       setAlertMessage('暂不支持该类型文件的预览')
       setShowAlert(true)
@@ -83,22 +83,24 @@ function FavoriteList() {
     <div className="file-list-container">
       <div className="navigation">
         <div className="current-path">
-          当前路径: 收藏列表
+          <i className="fa-solid fa-location-dot"></i>
+          <span className="current-path-label">路径:</span>
+          <span className="current-path-value">收藏列表</span>
         </div>
       </div>
       
       {favoriteFiles.length === 0 ? (
         <div className="empty-favorites">
-          <i className="fa-regular fa-star" style={{ fontSize: '48px', color: '#ddd', marginBottom: '16px' }}></i>
+          <i className="fa-regular fa-star"></i>
           <h3>暂无收藏文件</h3>
           <p>您可以在文件列表中点击"收藏"按钮来添加文件到收藏列表</p>
         </div>
       ) : (
         <>
-          <h2>收藏文件</h2>
+          <div className="section-title"><i className="fa-solid fa-star"></i> 收藏文件</div>
           <div className="file-grid">
             {favoriteFiles.map(file => (
-              <div key={file.id} className="file-card">
+              <div key={file.id} className={`file-card type-${file.type}`}>
                 <div className="file-icon">
                   {getFileIcon(file.type)}
                 </div>
@@ -109,10 +111,10 @@ function FavoriteList() {
                   </div>
                 </div>
                 <div className="file-meta">
-                  <div>大小: {formatSize(file.size)}</div>
-                  <div>修改时间: {formatTime(file.modified)}</div>
-                  <div>类型: {file.type}</div>
-                  <div>收藏时间: {formatTime(file.created_at)}</div>
+                  <div className="file-meta-row"><i className="fa-solid fa-hard-drive"></i> 大小: {formatSize(file.size)}</div>
+                  <div className="file-meta-row"><i className="fa-regular fa-clock"></i> 修改: {formatTime(file.modified)}</div>
+                  <div className="file-meta-row"><i className="fa-solid fa-tag"></i> 类型: {file.type}</div>
+                  <div className="file-meta-row"><i className="fa-solid fa-star"></i> 收藏: {formatTime(file.created_at)}</div>
                 </div>
                 <div className="file-actions">
                   <button 

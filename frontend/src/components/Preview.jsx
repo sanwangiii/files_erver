@@ -6,14 +6,20 @@ function Preview() {
   const [previewContent, setPreviewContent] = useState('')
   const [previewLoading, setPreviewLoading] = useState(true)
   const [previewError, setPreviewError] = useState('')
+  const [videoBuffering, setVideoBuffering] = useState(false)
   const { currentUser } = useContext(AuthContext)
   const videoRef = useRef(null) // 添加视频元素引用
   const subtitleRef = useRef(null) // 字幕元素引用
   const [subtitles, setSubtitles] = useState([]) // 字幕轨道列表
   const [selectedSubtitles, setSelectedSubtitles] = useState([]) // 当前选择的多个字幕轨道索引
-  const [subtitleContents, setSubtitleContents] = useState({}) // 存储每个轨道的字幕内容
   const [subtitleTracksMap, setSubtitleTracksMap] = useState({}) // 存储每个轨道的解析后字幕数据
   const [currentCues, setCurrentCues] = useState({}) // 当前显示的多个字幕
+
+  // 播放列表相关状态
+  const [playlist, setPlaylist] = useState([]) // 播放列表
+  const [currentIndex, setCurrentIndex] = useState(-1) // 当前播放索引
+  const [showPlaylist, setShowPlaylist] = useState(false) // 是否显示播放列表
+  const [autoPlayNext, setAutoPlayNext] = useState(true) // 是否自动播放下一个
 
   // 获取URL参数
   const getUrlParams = useCallback(() => {
@@ -22,9 +28,139 @@ function Preview() {
       name: params.get('name'),
       path: params.get('path'),
       type: params.get('type'),
-      from: params.get('from')
+      from: params.get('from'),
+      dir: params.get('dir') // 当前目录，用于播放列表
     }
   }, [])
+
+  // 获取当前目录的视频播放列表
+  const fetchPlaylist = useCallback(async (dir) => {
+    if (!dir) return
+
+    try {
+      const user = currentUser || JSON.parse(localStorage.getItem('user') || 'null') || null
+      const token = user?.token || ''
+
+      const response = await fetch(`/api/files?dir=${encodeURIComponent(dir)}&sort_by=name&sort_order=asc`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        // 过滤出视频文件
+        const videoFiles = (data.files || []).filter(file => file.type === 'video')
+        setPlaylist(videoFiles)
+        return videoFiles
+      }
+    } catch (error) {
+      console.error('获取播放列表失败:', error)
+    }
+    return []
+  }, [currentUser])
+
+  // 播放指定索引的视频
+  const playVideoAtIndex = useCallback((index) => {
+    if (index < 0 || index >= playlist.length) return
+
+    const video = playlist[index]
+    const user = currentUser || JSON.parse(localStorage.getItem('user') || 'null') || null
+    const token = user?.token || ''
+
+    setCurrentIndex(index)
+
+    // 更新 URL 参数（不刷新页面）
+    const searchParams = new URLSearchParams()
+    searchParams.set('name', video.name)
+    searchParams.set('path', video.path)
+    searchParams.set('type', 'video')
+    searchParams.set('dir', getUrlParams().dir || '')
+    window.history.replaceState(null, '', `/preview?${searchParams.toString()}`)
+
+    // 更新预览文件信息
+    const hostname = window.location.hostname
+    const backendPort = 3002
+    const fullVideoUrl = `http://${hostname}:${backendPort}/video/${encodeURIComponent(video.path)}?token=${token}`
+    const vlcProtocolUrl = `vlc://${fullVideoUrl}`
+
+    setPreviewFile({
+      name: video.name,
+      preview_url: `/video/${encodeURIComponent(video.path)}?token=${token}`,
+      vlc_url: vlcProtocolUrl,
+      type: 'video',
+      path: video.path
+    })
+
+    // 重置字幕状态
+    setSubtitles([])
+    setSelectedSubtitles([])
+    setSubtitleTracksMap({})
+    setCurrentCues({})
+
+    // 重新加载字幕
+    (async () => {
+      try {
+        const subtitlesResponse = await fetch(`/api/subtitles/${encodeURIComponent(video.path)}?token=${token}`)
+        if (subtitlesResponse.ok) {
+          const subtitlesData = await subtitlesResponse.json()
+          const subtitleList = subtitlesData.subtitles || []
+          setSubtitles(subtitleList)
+
+          if (subtitleList.length > 0) {
+            const firstSubtitleIndex = subtitleList[0].index
+            await loadSubtitle(firstSubtitleIndex, video.path)
+            setSelectedSubtitles([firstSubtitleIndex])
+          }
+        }
+      } catch (error) {
+        // 字幕加载失败不影响视频播放
+      }
+    })()
+
+    // 隐藏播放列表
+    setShowPlaylist(false)
+  }, [playlist, currentUser, getUrlParams])
+
+  // 监听 previewFile.path 变化，自动播放视频
+  useEffect(() => {
+    if (!previewFile?.path || previewFile.type !== 'video') return
+
+    const video = videoRef.current
+    if (!video) return
+
+    // 等待视频元素准备好
+    const handleCanPlay = () => {
+      video.play().catch(() => {
+        // 自动播放失败时忽略（浏览器策略）
+      })
+    }
+
+    video.addEventListener('canplay', handleCanPlay)
+
+    // 如果视频已经可以播放，直接播放
+    if (video.readyState >= 3) {
+      video.play().catch(() => {})
+    }
+
+    return () => {
+      video.removeEventListener('canplay', handleCanPlay)
+    }
+  }, [previewFile?.path])
+
+  // 播放上一个
+  const playPrevious = useCallback(() => {
+    if (currentIndex > 0) {
+      playVideoAtIndex(currentIndex - 1)
+    }
+  }, [currentIndex, playVideoAtIndex])
+
+  // 播放下一个
+  const playNext = useCallback(() => {
+    if (currentIndex < playlist.length - 1) {
+      playVideoAtIndex(currentIndex + 1)
+    }
+  }, [currentIndex, playlist.length, playVideoAtIndex])
 
   // 处理预览
   const handlePreview = async () => {
@@ -71,9 +207,6 @@ function Preview() {
         // 直接生成VLC协议URL，不使用中间网页
         let vlcProtocolUrl = null
         if (params.type === 'video') {
-          // 使用相对路径，让浏览器自动处理主机名和端口
-          const videoUrl = `/video/${encodeURIComponent(params.path)}?token=${token}`
-          // 由于浏览器会自动处理代理，所以VLC URL需要使用完整的HTTP URL
           const hostname = window.location.hostname
           const backendPort = 3002
           const fullVideoUrl = `http://${hostname}:${backendPort}/video/${encodeURIComponent(params.path)}?token=${token}`
@@ -91,66 +224,47 @@ function Preview() {
         
         // 视频加载后，异步获取字幕信息，不阻塞视频显示
         if (params.type === 'video') {
-          // 异步获取字幕轨道信息，不阻塞视频显示
           (async () => {
             try {
-              // 获取字幕轨道信息
-              console.log('========================================')
-              console.log('开始获取字幕轨道信息')
               const subtitlesResponse = await fetch(`/api/subtitles/${encodeURIComponent(params.path)}?token=${token}`)
-              console.log('字幕轨道请求响应状态:', subtitlesResponse.status)
               if (subtitlesResponse.ok) {
                 const subtitlesData = await subtitlesResponse.json()
-                console.log('获取到的字幕轨道数据:', subtitlesData)
                 const subtitleList = subtitlesData.subtitles || []
-                console.log('获取到字幕轨道列表:', subtitleList)
-                console.log('字幕轨道数量:', subtitleList.length)
                 setSubtitles(subtitleList)
-                
-                // 默认开启第一个字幕轨道
+
                 if (subtitleList.length > 0) {
                   const firstSubtitleIndex = subtitleList[0].index
-                  console.log('默认开启第一个字幕轨道，索引:', firstSubtitleIndex)
-                  
-                  // 加载并解析第一个字幕轨道
-                  try {
-                    console.log('开始加载第一个字幕轨道，索引:', firstSubtitleIndex)
-                    // 直接传递params.path作为文件路径，不依赖previewFile状态
-                    await loadSubtitle(firstSubtitleIndex, params.path)
-                    // 字幕加载完成后，再设置selectedSubtitles，确保顺序正确
-                    setSelectedSubtitles([firstSubtitleIndex])
-                  } catch (error) {
-                    console.error('加载第一个字幕轨道时出错:', error)
-                    console.error('错误堆栈:', error.stack)
-                  }
-                } else {
-                  console.log('没有找到字幕轨道')
+                  await loadSubtitle(firstSubtitleIndex, params.path)
+                  setSelectedSubtitles([firstSubtitleIndex])
                 }
-              } else {
-                console.error('获取字幕轨道列表失败，响应状态:', subtitlesResponse.status)
-                const errorText = await subtitlesResponse.text()
-                console.error('错误信息:', errorText)
               }
-              console.log('========================================')
             } catch (error) {
-              console.error('获取字幕信息失败:', error)
+              // 字幕加载失败不影响视频播放
+            }
+          })()
+
+          // 异步获取播放列表，不阻塞视频显示
+          ;(async () => {
+            try {
+              const videoFiles = await fetchPlaylist(params.dir || '')
+              if (videoFiles.length > 0) {
+                // 找到当前视频在播放列表中的索引
+                const index = videoFiles.findIndex(v => v.path === params.path)
+                if (index !== -1) {
+                  setCurrentIndex(index)
+                }
+              }
+            } catch (error) {
+              // 播放列表获取失败不影响视频播放
             }
           })()
         }
       }
     } catch (error) {
-      console.error('预览失败:', error)
       setPreviewError('预览失败，请检查文件权限或网络连接')
     } finally {
       // 立即结束加载状态，让视频先显示
       setPreviewLoading(false)
-    }
-  }
-
-  // 使用相对路径打开新窗口
-  const openInNewWindow = (url) => {
-    if (url) {
-      window.open(url, '_blank')
     }
   }
 
@@ -159,48 +273,37 @@ function Preview() {
     const params = getUrlParams()
     const from = params.from
     
-    // 根据from参数决定返回的页面
+    // 使用浏览器历史记录返回，不会刷新页面
     if (from === 'favorites') {
-      // 从收藏列表预览的，直接返回收藏列表
-      // 使用history.back()无法返回到正确的视图，所以我们直接跳转到带有视图状态的URL
-      window.location.href = '/files?view=favorites'
+      window.history.pushState(null, '', '/files?view=favorites')
+      window.dispatchEvent(new PopStateEvent('popstate'))
     } else {
-      // 默认返回文件列表
       window.history.back()
     }
   }
 
   // 解析WebVTT字幕内容
   const parseWebVTT = (content) => {
-    console.log('开始解析WebVTT内容，原始内容长度:', content.length)
-    console.log('原始内容前500字符:', content.substring(0, 500))
     
     const cues = []
     const lines = content.trim().split('\n')
-    console.log('分割后总行数:', lines.length)
     
     // 跳过WEBVTT头部和样式块
     let i = 0
     while (i < lines.length) {
-      console.log('处理行', i, ':', lines[i].trim())
       
       if (lines[i].trim() === 'WEBVTT') {
         // 跳过WEBVTT头部
-        console.log('跳过WEBVTT头部')
         i++
       } else if (lines[i].trim() === 'STYLE') {
         // 跳过STYLE块
-        console.log('跳过STYLE块开始')
         i++
         // 跳过样式块的所有内容，直到遇到下一个空行或文件结束
         while (i < lines.length && lines[i].trim() !== '') {
-          console.log('跳过STYLE内容行', i, ':', lines[i].trim())
           i++
         }
-        console.log('跳过STYLE块结束')
       } else if (lines[i].trim() === 'NOTE' || lines[i].trim().startsWith('X-TIMESTAMP-MAP=')) {
         // 跳过NOTE块和时间戳映射
-        console.log('跳过NOTE或时间戳映射行')
         i++
         // 跳过NOTE块的内容
         if (lines[i-1].trim() === 'NOTE') {
@@ -210,7 +313,6 @@ function Preview() {
         }
       } else if (lines[i].trim() !== '') {
         // 开始解析一个cue
-        console.log('开始解析cue，行号:', i)
         const cue = {
           id: null,
           startTime: 0,
@@ -223,22 +325,18 @@ function Preview() {
         
         if (possibleTimeMatch) {
           // 当前行直接是时间范围，没有ID
-          console.log('当前行直接是时间范围，没有ID')
           cue.id = null
         } else {
           // 当前行是ID
           cue.id = lines[i].trim()
-          console.log('cue ID:', cue.id)
           i++
         }
         
         // 解析时间范围，支持HH:MM:SS.mmm和MM:SS.mmm两种格式
         if (i < lines.length) {
-          console.log('解析时间行，行号:', i, '内容:', lines[i])
           // 匹配HH:MM:SS.mmm或MM:SS.mmm格式
           const timeMatch = lines[i].match(/((?:\d{2}:)?\d{2}:\d{2}\.\d{3}) --> ((?:\d{2}:)?\d{2}:\d{2}\.\d{3})/)
           if (timeMatch) {
-            console.log('时间匹配成功:', timeMatch[1], '->', timeMatch[2])
             // 解析开始时间
             const startParts = timeMatch[1].split(':')
             if (startParts.length === 3) {
@@ -248,7 +346,6 @@ function Preview() {
               // MM:SS.mmm格式
               cue.startTime = parseInt(startParts[0]) * 60 + parseFloat(startParts[1])
             }
-            console.log('开始时间:', cue.startTime)
             
             // 解析结束时间
             const endParts = timeMatch[2].split(':')
@@ -259,52 +356,38 @@ function Preview() {
               // MM:SS.mmm格式
               cue.endTime = parseInt(endParts[0]) * 60 + parseFloat(endParts[1])
             }
-            console.log('结束时间:', cue.endTime)
             i++
             
             // 解析文本内容
             let text = ''
-            console.log('开始解析文本内容，从行号:', i)
             while (i < lines.length && lines[i].trim() !== '') {
               text += lines[i] + '\n'
-              console.log('添加文本行，行号:', i, '内容:', lines[i])
               i++
             }
             cue.text = text.trim()
-            console.log('解析到的文本内容:', cue.text)
             
             // 只添加有效字幕（有文本内容的）
             if (cue.text) {
-              console.log('添加有效字幕到列表')
               cues.push(cue)
-            } else {
-              console.log('跳过空字幕')
             }
           } else {
             // 不是时间范围，跳过
-            console.log('不是时间范围，跳过该行')
             i++
           }
         } else {
-          console.log('已到达文件末尾，无法解析时间范围')
           i++
         }
       } else {
         // 空行，跳过
-        console.log('跳过空行')
         i++
       }
     }
     
-    console.log('解析完成，共找到', cues.length, '个有效字幕')
-    console.log('解析得到的字幕列表:', cues)
     return cues
   }
   
   // 加载字幕内容
   const loadSubtitle = async (subtitleIndex, filePath) => {
-    console.log('========================================')
-    console.log('开始加载字幕，索引:', subtitleIndex, '文件路径:', filePath)
     try {
       // 安全获取用户信息和token
       let token = ''
@@ -318,33 +401,19 @@ function Preview() {
           token = ''
         }
       }
-      console.log('获取到的token:', token ? '有token' : '无token')
       
       if (!filePath) {
-        console.error('文件路径为空，无法加载字幕')
         return
       }
       
       const url = `/api/subtitle_content/${encodeURIComponent(filePath)}?index=${subtitleIndex}&token=${token}`
-      console.log('字幕请求URL:', url)
       
       const response = await fetch(url)
-      console.log('字幕请求响应状态:', response.status)
       
       if (response.ok) {
         const data = await response.text()
-        console.log('获取到字幕内容，长度:', data.length)
         
-        // 存储字幕内容到对应的轨道
-        setSubtitleContents(prev => ({
-          ...prev,
-          [subtitleIndex]: data
-        }))
-        
-        // 解析字幕内容
         const cues = parseWebVTT(data)
-        console.log('解析得到的字幕数量:', cues.length)
-        console.log('解析得到的字幕列表:', cues)
         
         // 存储解析后的字幕轨道数据
         setSubtitleTracksMap(prev => {
@@ -358,16 +427,10 @@ function Preview() {
           }, 0)
           return newMap
         })
-      } else {
-        console.error('获取字幕失败，响应状态:', response.status)
-        const errorText = await response.text()
-        console.error('错误信息:', errorText)
       }
     } catch (error) {
-      console.error('加载字幕失败:', error)
       setPreviewError('加载字幕失败')
     }
-    console.log('========================================')
   }
   
   // 使用二分查找优化字幕查找，提高性能
@@ -415,19 +478,14 @@ function Preview() {
   
   // 监听selectedSubtitles变化，确保所有选中的字幕都已加载
   useEffect(() => {
-    // 遍历所有选中的字幕轨道
     selectedSubtitles.forEach(async (subtitleIndex) => {
-      // 如果该轨道的字幕数据尚未加载，就加载它
       if (!subtitleTracksMap[subtitleIndex] || subtitleTracksMap[subtitleIndex].length === 0) {
-        try {
-          // 只有在previewFile.path存在时才加载字幕
-          if (previewFile?.path) {
+        if (previewFile?.path) {
+          try {
             await loadSubtitle(subtitleIndex, previewFile.path)
-          } else {
-            console.error('previewFile.path 为空，无法加载字幕轨道:', subtitleIndex)
+          } catch (error) {
+            // 字幕加载失败不影响视频播放
           }
-        } catch (error) {
-          console.error(`加载轨道 ${subtitleIndex} 失败:`, error)
         }
       }
     })
@@ -521,43 +579,81 @@ function Preview() {
     document.addEventListener('mozfullscreenchange', handleFullscreenChange)
     document.addEventListener('MSFullscreenChange', handleFullscreenChange)
     
-    // 同时添加到视频元素本身，确保各种全屏方式都能被捕获
-    videoElement.addEventListener('fullscreenchange', handleFullscreenChange)
-    videoElement.addEventListener('webkitfullscreenchange', handleFullscreenChange)
-    videoElement.addEventListener('mozfullscreenchange', handleFullscreenChange)
-    videoElement.addEventListener('MSFullscreenChange', handleFullscreenChange)
-    
-    // 添加video元素的enterfullscreen和exitfullscreen事件监听
-    videoElement.addEventListener('enterfullscreen', handleFullscreenChange)
-    videoElement.addEventListener('webkitenterfullscreen', handleFullscreenChange)
-    videoElement.addEventListener('mozfullscreenchange', handleFullscreenChange)
-    videoElement.addEventListener('MSFullscreenChange', handleFullscreenChange)
-    
     return () => {
-      // 移除document上的事件监听器
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
       document.removeEventListener('mozfullscreenchange', handleFullscreenChange)
       document.removeEventListener('MSFullscreenChange', handleFullscreenChange)
-      
-      // 移除视频元素上的事件监听器
-      videoElement.removeEventListener('fullscreenchange', handleFullscreenChange)
-      videoElement.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
-      videoElement.removeEventListener('mozfullscreenchange', handleFullscreenChange)
-      videoElement.removeEventListener('MSFullscreenChange', handleFullscreenChange)
-      
-      // 移除enterfullscreen相关事件
-      videoElement.removeEventListener('enterfullscreen', handleFullscreenChange)
-      videoElement.removeEventListener('webkitenterfullscreen', handleFullscreenChange)
     }
   }, [updateSubtitles])
   
   // 添加新的useEffect，专门监听subtitleTracksMap的变化，确保字幕加载完成后能立即显示
   useEffect(() => {
-    console.log('检测到subtitleTracksMap变化，强制更新字幕')
     // 强制更新字幕，无论视频是否加载完成
     updateSubtitles()
   }, [subtitleTracksMap, updateSubtitles])
+
+  // 键盘快捷键支持
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const videoElement = videoRef.current
+      if (!videoElement || previewFile?.type !== 'video') return
+
+      // 如果用户正在输入框中，不处理快捷键
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+
+      switch (e.key) {
+        case ' ':
+        case 'k':
+          e.preventDefault()
+          videoElement.paused ? videoElement.play() : videoElement.pause()
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          videoElement.currentTime = Math.max(0, videoElement.currentTime - 5)
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          videoElement.currentTime = Math.min(videoElement.duration, videoElement.currentTime + 5)
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          videoElement.volume = Math.min(1, videoElement.volume + 0.1)
+          break
+        case 'ArrowDown':
+          e.preventDefault()
+          videoElement.volume = Math.max(0, videoElement.volume - 0.1)
+          break
+        case 'f':
+        case 'F':
+          e.preventDefault()
+          if (document.fullscreenElement) {
+            document.exitFullscreen()
+          } else {
+            videoElement.requestFullscreen?.() || videoElement.webkitRequestFullscreen?.()
+          }
+          break
+        case 'm':
+        case 'M':
+          e.preventDefault()
+          videoElement.muted = !videoElement.muted
+          break
+        case 'j':
+          e.preventDefault()
+          videoElement.currentTime = Math.max(0, videoElement.currentTime - 10)
+          break
+        case 'l':
+          e.preventDefault()
+          videoElement.currentTime = Math.min(videoElement.duration, videoElement.currentTime + 10)
+          break
+        default:
+          break
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [previewFile])
 
   // 组件挂载时加载预览
   useEffect(() => {
@@ -607,6 +703,46 @@ function Preview() {
             {/* 视频预览 */}
             {previewFile.type === 'video' && (
               <div className="video-preview-container">
+                {/* 播放列表迷你控制条 */}
+                {playlist.length > 0 && (
+                  <div className="playlist-mini-bar">
+                    <span className="playlist-info">
+                      {currentIndex + 1} / {playlist.length}
+                    </span>
+                    <button
+                      className="playlist-btn"
+                      onClick={playPrevious}
+                      disabled={currentIndex <= 0}
+                      title="上一集"
+                    >
+                      <i className="fas fa-backward"></i>
+                    </button>
+                    <button
+                      className="playlist-btn"
+                      onClick={playNext}
+                      disabled={currentIndex >= playlist.length - 1}
+                      title="下一集"
+                    >
+                      <i className="fas fa-forward"></i>
+                    </button>
+                    <button
+                      className={`playlist-btn ${autoPlayNext ? 'active' : ''}`}
+                      onClick={() => setAutoPlayNext(!autoPlayNext)}
+                      title={autoPlayNext ? '已开启自动连播' : '已关闭自动连播'}
+                    >
+                      <i className={`fas fa-${autoPlayNext ? 'redo' : 'ban'}`}></i>
+                      {autoPlayNext ? '连播' : '关闭'}
+                    </button>
+                    <button
+                      className="playlist-btn"
+                      onClick={() => setShowPlaylist(!showPlaylist)}
+                      title="播放列表"
+                    >
+                      <i className="fas fa-list"></i>
+                    </button>
+                  </div>
+                )}
+
                 <div className="video-with-subtitles" ref={subtitleRef}>
                   <video
                     ref={videoRef}
@@ -614,9 +750,51 @@ function Preview() {
                     className="video-preview"
                     controls
                     playsInline
-                    preload="metadata"
-                    onError={() => setPreviewError('视频加载失败')}
+                    preload="auto"
+                    onWaiting={() => setVideoBuffering(true)}
+                    onPlaying={() => setVideoBuffering(false)}
+                    onCanPlay={() => setVideoBuffering(false)}
+                    onLoadedData={() => setVideoBuffering(false)}
+                    onError={(e) => {
+                      // 获取更详细的错误信息
+                      const video = e.target
+                      const error = video.error
+                      let errorMsg = '视频加载失败'
+
+                      if (error) {
+                        switch (error.code) {
+                          case MediaError.MEDIA_ERR_ABORTED:
+                            errorMsg = '视频加载被中断'
+                            break
+                          case MediaError.MEDIA_ERR_NETWORK:
+                            errorMsg = '网络原因导致视频加载失败'
+                            break
+                          case MediaError.MEDIA_ERR_DECODE:
+                            errorMsg = '视频格式不支持（可能是 HEVC/H.265 编码，Chrome 不支持）'
+                            break
+                          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                            errorMsg = '视频格式或编码不支持（MKV/HEVC 等格式建议使用 VLC 播放）'
+                            break
+                          default:
+                            errorMsg = `视频加载失败（错误码: ${error.code}）`
+                        }
+                      }
+
+                      setPreviewError(errorMsg)
+                      setVideoBuffering(false)
+                    }}
+                    onEnded={() => {
+                      if (autoPlayNext && currentIndex < playlist.length - 1) {
+                        playNext()
+                      }
+                    }}
                   ></video>
+                  {/* 缓冲加载指示器 */}
+                  {videoBuffering && (
+                    <div className="video-buffering">
+                      <div className="loading-spinner"></div>
+                    </div>
+                  )}
                   {/* 显示所有选中轨道的字幕 */}
                   <div className="custom-subtitles-container">
                     {selectedSubtitles.map((subtitleIndex) => {
@@ -680,6 +858,18 @@ function Preview() {
                 )}
                 
                 <div className="video-actions">
+                  {previewError && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setPreviewError('')
+                        setVideoBuffering(false)
+                        handlePreview()
+                      }}
+                    >
+                      <i className="fa-solid fa-rotate-right"></i> 重试加载
+                    </button>
+                  )}
                   <a
                     href={previewFile.vlc_url}
                     target="_blank"
@@ -688,6 +878,40 @@ function Preview() {
                   >
                     <i className="fas fa-play"></i> 使用VLC播放
                   </a>
+                </div>
+
+                {/* 播放列表弹窗 */}
+                {showPlaylist && playlist.length > 0 && (
+                  <div className="playlist-modal">
+                    <div className="playlist-modal-header">
+                      <h3>播放列表 ({playlist.length} 个视频)</h3>
+                      <button className="playlist-close-btn" onClick={() => setShowPlaylist(false)}>
+                        <i className="fas fa-times"></i>
+                      </button>
+                    </div>
+                    <div className="playlist-modal-content">
+                      {playlist.map((video, index) => (
+                        <div
+                          key={video.path}
+                          className={`playlist-item ${index === currentIndex ? 'active' : ''}`}
+                          onClick={() => playVideoAtIndex(index)}
+                        >
+                          <span className="playlist-item-index">{index + 1}</span>
+                          <span className="playlist-item-name">{video.name}</span>
+                          {index === currentIndex && <i className="fas fa-play playlist-item-playing"></i>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="video-shortcuts-hint">
+                  <span>快捷键: </span>
+                  <kbd>空格</kbd> 暂停
+                  <kbd>←</kbd><kbd>→</kbd> 快退/快进 5s
+                  <kbd>J</kbd><kbd>L</kbd> 快退/快进 10s
+                  <kbd>F</kbd> 全屏
+                  <kbd>M</kbd> 静音
                 </div>
               </div>
             )}

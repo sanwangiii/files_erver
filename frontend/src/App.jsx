@@ -1,12 +1,14 @@
-import React, { useState, useEffect, createContext, useContext, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, createContext, useContext, useMemo, useCallback, lazy, Suspense } from 'react'
 import Login from './components/Login'
 import FileList from './components/FileList'
-import Preview from './components/Preview'
-import Admin from './components/Admin'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import FavoriteList from './components/FavoriteList'
-import ImageWaterfall from './components/ImageWaterfall'
+
+// 路由级懒加载：Preview 和 ImageWaterfall 体积大，按需加载
+const Preview = lazy(() => import('./components/Preview'))
+const ImageWaterfall = lazy(() => import('./components/ImageWaterfall'))
+const Admin = lazy(() => import('./components/Admin'))
 
 // 基础URL使用空字符串，这样会使用相对路径，从而利用Vite的代理配置
 const BASE_URL = '';
@@ -18,17 +20,17 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentUser, setCurrentUser] = useState(null)
   const [viewedFiles, setViewedFiles] = useState(() => {
-    // 初始化时直接从localStorage加载已查阅文件列表
     const savedViewedFiles = localStorage.getItem('viewedFiles')
     return savedViewedFiles ? JSON.parse(savedViewedFiles) : []
   })
 
+  // 当前页面路径（state-based 路由）
+  const [currentPage, setCurrentPage] = useState(() => window.location.pathname)
+
   // 管理员组件切换状态
   const [adminView, setAdminView] = useState(() => {
-    // 检查sessionStorage中的view状态
     const savedView = sessionStorage.getItem('view')
     if (savedView === 'favorites') {
-      // 清除sessionStorage中的view状态
       sessionStorage.removeItem('view')
       return 'favorites'
     }
@@ -37,10 +39,8 @@ function App() {
   
   // 视图切换状态 - 普通用户
   const [userView, setUserView] = useState(() => {
-    // 检查sessionStorage中的view状态
     const savedView = sessionStorage.getItem('view')
     if (savedView === 'favorites') {
-      // 清除sessionStorage中的view状态
       sessionStorage.removeItem('view')
       return 'favorites'
     }
@@ -50,12 +50,19 @@ function App() {
   // 收藏功能状态管理
   const [favoriteFiles, setFavoriteFiles] = useState([])
 
+  // 客户端路由导航函数：不刷新页面
+  const navigate = useCallback((path) => {
+    window.history.pushState(null, '', path)
+    setCurrentPage(path.split('?')[0])
+  }, [])
+
   // 使用useCallback优化已查阅文件相关函数
   const addViewedFile = useCallback((filePath) => {
-    if (!viewedFiles.includes(filePath)) {
-      setViewedFiles([...viewedFiles, filePath])
-    }
-  }, [viewedFiles])
+    setViewedFiles(prev => {
+      if (prev.includes(filePath)) return prev
+      return [...prev, filePath]
+    })
+  }, [])
 
   // 检查文件是否已查阅
   const isFileViewed = useCallback((filePath) => {
@@ -64,10 +71,9 @@ function App() {
 
   // 登录处理
   const handleLogin = useCallback((user) => {
-    // 直接使用后端返回的用户对象（已包含token）
     const userWithToken = {
       ...user,
-      password: undefined // 确保移除密码字段
+      password: undefined
     }
     setIsAuthenticated(true)
     setCurrentUser(userWithToken)
@@ -162,71 +168,49 @@ function App() {
     return favoriteFiles.some(fav => fav.path === filePath)
   }, [favoriteFiles])
 
-  // 从localStorage加载认证状态和已查阅文件
+  // 初始化：加载认证状态 + 监听浏览器前进/后退
   useEffect(() => {
-    // 处理路由：确保/files路径能正确处理查询参数
     const handleRouteChange = () => {
       const path = window.location.pathname
       const searchParams = new URLSearchParams(window.location.search)
-      const dir = searchParams.get('dir') || ''
-      const view = searchParams.get('view') || ''
+      const view = searchParams.get('view')
       
-      // 检查view参数，设置正确的视图
       if (view === 'favorites') {
         setAdminView('favorites')
         setUserView('favorites')
-        // 清除URL中的view参数，避免影响后续操作
         const newSearchParams = new URLSearchParams()
-        if (dir) {
-          newSearchParams.set('dir', dir)
-        }
-        // 替换当前URL，不添加到浏览器历史记录
+        const dir = searchParams.get('dir')
+        if (dir) newSearchParams.set('dir', dir)
         window.history.replaceState(null, '', `/files?${newSearchParams.toString()}`)
       }
       
-      if (path === '/files' || path === '/preview' || path === '/waterfall') {
-        // /files、/preview和/waterfall路径已经是正确的，不需要修改
-        return
-      } else if (path !== '/') {
-        // 其他路径转换为/files路径
-        const newDir = dir || path.slice(1)
-        // 构建新的URL
+      // 转换非法路径
+      if (path !== '/files' && path !== '/preview' && path !== '/waterfall' && path !== '/') {
+        const dir = searchParams.get('dir') || path.slice(1)
         const newSearchParams = new URLSearchParams()
-        if (newDir) {
-          newSearchParams.set('dir', newDir)
-        }
-        // 替换当前URL，不添加到浏览器历史记录
+        if (dir) newSearchParams.set('dir', dir)
         window.history.replaceState(null, '', `/files?${newSearchParams.toString()}`)
       }
+      
+      setCurrentPage(window.location.pathname)
     }
 
-    // 初始加载时处理路由
     handleRouteChange()
 
-    // 加载已保存的用户信息
     const savedUser = localStorage.getItem('user')
     if (savedUser) {
       let user = JSON.parse(savedUser)
-      // 如果用户没有token，为其生成一个
-      if (!user.token || !user.token.includes('-token')) {
-        const token = `${user.username}-token-${Date.now()}`
-        user = {
-          ...user,
-          token
-        }
-        // 更新localStorage中的用户信息
-        localStorage.setItem('user', JSON.stringify(user))
+      if (!user.token || user.token.includes('-token')) {
+        localStorage.removeItem('user')
+        localStorage.removeItem('isAuthenticated')
+      } else {
+        setIsAuthenticated(true)
+        setCurrentUser(user)
       }
-      setIsAuthenticated(true)
-      setCurrentUser(user)
     }
     
-    // 监听URL变化（仅当用户使用浏览器前进/后退按钮时）
     window.addEventListener('popstate', handleRouteChange)
-    
-    return () => {
-      window.removeEventListener('popstate', handleRouteChange)
-    }
+    return () => window.removeEventListener('popstate', handleRouteChange)
   }, [])
 
   // 当用户登录成功后，加载收藏文件
@@ -253,9 +237,10 @@ function App() {
       favoriteFiles,
       addFavorite,
       removeFavorite,
-      isFileFavorite
+      isFileFavorite,
+      navigate
     };
-  }, [isAuthenticated, currentUser, handleLogin, handleLogout, addViewedFile, isFileViewed, favoriteFiles, addFavorite, removeFavorite, isFileFavorite]);
+  }, [isAuthenticated, currentUser, handleLogin, handleLogout, addViewedFile, isFileViewed, favoriteFiles, addFavorite, removeFavorite, isFileFavorite, navigate]);
 
   // 添加连续点击检测逻辑
   const [clickCount, setClickCount] = useState(0)
@@ -267,7 +252,6 @@ function App() {
     const now = Date.now()
     const timeDiff = now - lastClickTime
     
-    // 重置点击计数如果超过2秒
     if (timeDiff > 2000) {
       setClickCount(1)
     } else {
@@ -276,90 +260,80 @@ function App() {
     
     setLastClickTime(now)
     
-    // 连续点击5次，显示或切换到用户管理
     if (clickCount + 1 === 5) {
       setShowAdminButton(true)
-      // 直接切换到用户管理
       setAdminView('admin')
-      // 重置点击计数
       setClickCount(0)
     } else {
-      // 正常点击，切换到文件列表并隐藏用户管理按钮
       setAdminView('fileList')
-      // 返回文件列表时，默认继续隐藏用户管理
       setShowAdminButton(false)
     }
   }
 
-  // 路由处理
-  const getCurrentComponent = () => {
-    const path = window.location.pathname
-    
+  // 路由渲染
+  const renderPage = () => {
+    const loadingFallback = <div className="loading"><div className="loading-spinner"></div></div>
+
     if (!isAuthenticated) {
       return <Login />
     }
     
-    if (path === '/preview') {
-      return <Preview />
+    if (currentPage === '/preview') {
+      return <Suspense fallback={loadingFallback}><Preview /></Suspense>
     }
     
-    if (path === '/waterfall') {
-      return <ImageWaterfall />
+    if (currentPage === '/waterfall') {
+      return <Suspense fallback={loadingFallback}><ImageWaterfall /></Suspense>
     }
     
     if (currentUser.isAdmin) {
       return (
         <>
-          {/* 管理员导航菜单 */}
           <div className="admin-nav">
             <button 
               className={adminView === 'fileList' ? 'active' : ''}
               onClick={handleFileListClick}
             >
-              文件列表
+              <i className="fa-solid fa-folder-open" style={{ marginRight: '6px' }}></i>文件列表
             </button>
             {showAdminButton && (
               <button 
                 className={adminView === 'admin' ? 'active' : ''}
                 onClick={() => setAdminView('admin')}
               >
-                用户管理
+                <i className="fa-solid fa-users-gear" style={{ marginRight: '6px' }}></i>用户管理
               </button>
             )}
             <button 
               className={adminView === 'favorites' ? 'active' : ''}
               onClick={() => setAdminView('favorites')}
             >
-              收藏列表
+              <i className="fa-solid fa-star" style={{ marginRight: '6px' }}></i>收藏列表
             </button>
           </div>
           
-          {/* 根据选择显示对应的组件 */}
-          {adminView === 'fileList' ? <FileList /> : adminView === 'admin' ? <Admin /> : <FavoriteList />}
+          {adminView === 'fileList' ? <FileList /> : adminView === 'admin' ? <Suspense fallback={loadingFallback}><Admin /></Suspense> : <FavoriteList />}
         </>
       )
     }
     
-    // 普通用户视图切换
     return (
       <>
-        {/* 用户导航菜单 */}
         <div className="user-nav">
           <button 
             className={userView === 'fileList' ? 'active' : ''}
             onClick={() => setUserView('fileList')}
           >
-            文件列表
+            <i className="fa-solid fa-folder-open" style={{ marginRight: '6px' }}></i>文件列表
           </button>
           <button 
             className={userView === 'favorites' ? 'active' : ''}
             onClick={() => setUserView('favorites')}
           >
-            收藏列表
+            <i className="fa-solid fa-star" style={{ marginRight: '6px' }}></i>收藏列表
           </button>
         </div>
         
-        {/* 根据选择显示对应的组件 */}
         {userView === 'fileList' ? <FileList /> : <FavoriteList />}
       </>
     )
@@ -370,7 +344,7 @@ function App() {
       <div className="app">
         <Header />
         <div className="container">
-          {getCurrentComponent()}
+          {renderPage()}
         </div>
         <Footer />
       </div>

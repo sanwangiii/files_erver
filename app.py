@@ -30,6 +30,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from functools import wraps
 from collections import defaultdict
+from werkzeug.http import http_date
 
 from flask import (
     Flask, render_template, request, url_for,
@@ -76,11 +77,13 @@ LOG_FILE = BASE_DIR / "file_server.log"
 
 # ==================== 安全配置 ====================
 
-# Token 密钥（每次启动随机生成，生产环境应固定）
-SECRET_KEY = os.environ.get(
-    'FILE_SERVER_SECRET',
-    hashlib.sha256(os.urandom(32)).hexdigest()
-)
+# Token 密钥（持久化到文件，重启不丢失）
+_SECRET_FILE = BASE_DIR / ".secret_key"
+if _SECRET_FILE.exists():
+    SECRET_KEY = _SECRET_FILE.read_text().strip()
+else:
+    SECRET_KEY = hashlib.sha256(os.urandom(32)).hexdigest()
+    _SECRET_FILE.write_text(SECRET_KEY)
 TOKEN_EXPIRE_SECONDS = 7 * 24 * 3600  # token 7 天过期
 
 # 登录限流
@@ -189,6 +192,12 @@ file_cache = TTLCache(ttl=30, cleanup_interval=120)
 folder_cache = TTLCache(ttl=30, cleanup_interval=120)
 # 配置缓存（5秒 TTL，配置变更不频繁）
 config_cache = TTLCache(ttl=5, cleanup_interval=30)
+# 用户数据缓存（10秒 TTL）
+_user_cache = TTLCache(ttl=10, cleanup_interval=60)
+# 收藏数据缓存（10秒 TTL）
+_favorites_cache = TTLCache(ttl=10, cleanup_interval=60)
+# 字幕缓存（5分钟 TTL，避免重复提取）
+_subtitle_cache = TTLCache(ttl=300, cleanup_interval=600)
 
 # ==================== 密码安全 ====================
 
@@ -301,13 +310,25 @@ def _verify_legacy_token(token):
 
 _login_attempts = defaultdict(list)  # key: IP, value: [timestamps]
 _login_user_attempts = defaultdict(list)  # key: username, value: [timestamps]
+_login_cleanup_ts = time.time()
 
 def _check_rate_limit(key, store):
     """检查是否超过限流，返回 True 表示被限流"""
+    global _login_cleanup_ts
     now = time.time()
     # 清理过期记录
     store[key] = [t for t in store[key] if now - t < LOGIN_RATE_WINDOW]
-    return len(store[key]) >= LOGIN_RATE_LIMIT
+    if not store[key]:
+        del store[key]
+    # 定期清理整个字典（每10分钟）
+    if now - _login_cleanup_ts > 600:
+        _login_cleanup_ts = now
+        for s in (_login_attempts, _login_user_attempts):
+            expired = [k for k, v in s.items()
+                       if all(now - t > LOGIN_RATE_WINDOW for t in v)]
+            for k in expired:
+                del s[k]
+    return len(store.get(key, [])) >= LOGIN_RATE_LIMIT
 
 def _record_attempt(key, store):
     now = time.time()
@@ -315,57 +336,89 @@ def _record_attempt(key, store):
 
 # ==================== 路径安全 ====================
 
+# 路径解析缓存（60秒 TTL）
+_path_resolve_cache = TTLCache(ttl=60, cleanup_interval=120)
+
 def safe_path(directory, base=MOBILE_HDD_PATH):
-    """安全处理路径，防止路径遍历攻击"""
+    """安全处理路径，防止路径遍历攻击（带缓存）"""
     decoded = urllib.parse.unquote(directory) if directory else ''
+    cache_key = f"{base}:{decoded}"
+    cached = _path_resolve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     full = Path(base) / decoded
     try:
-        # resolve() 会解析 .. 和符号链接
         resolved = full.resolve()
         base_resolved = Path(base).resolve()
-        # 确保结果在基础路径内
         if not str(resolved).startswith(str(base_resolved)):
             logger.warning(f"路径遍历攻击尝试: {directory}")
+            _path_resolve_cache.set(cache_key, (None, None))
             return None, None
-        return resolved, base_resolved
+        result = (resolved, base_resolved)
+        _path_resolve_cache.set(cache_key, result)
+        return result
     except Exception:
+        _path_resolve_cache.set(cache_key, (None, None))
         return None, None
 
 # ==================== 数据读写 ====================
 
+_data_lock = threading.Lock()
+
 def load_json_file(filepath, key):
-    """通用 JSON 文件加载"""
+    """通用 JSON 文件加载（线程安全）"""
     try:
-        if filepath.exists():
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get(key, [])
-        return []
+        with _data_lock:
+            if filepath.exists():
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get(key, [])
+            return []
     except Exception as e:
         logger.error(f"加载 {filepath} 失败: {e}")
         return []
 
 def save_json_file(filepath, data, key):
-    """通用 JSON 文件保存"""
+    """通用 JSON 文件保存（线程安全，先写临时文件再替换）"""
     try:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump({key: data}, f, indent=2, ensure_ascii=False)
-        return True
+        with _data_lock:
+            tmp = filepath.with_suffix('.tmp')
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump({key: data}, f, indent=2, ensure_ascii=False)
+            tmp.replace(filepath)  # 原子替换
+            return True
     except Exception as e:
         logger.error(f"保存 {filepath} 失败: {e}")
         return False
 
 def load_users():
-    return load_json_file(USERS_FILE, 'users')
+    cached = _user_cache.get('users')
+    if cached is not None:
+        return cached
+    users = load_json_file(USERS_FILE, 'users')
+    _user_cache.set('users', users)
+    return users
 
 def save_users(users):
-    return save_json_file(USERS_FILE, users, 'users')
+    result = save_json_file(USERS_FILE, users, 'users')
+    if result:
+        _user_cache.delete('users')
+    return result
 
 def load_favorites():
-    return load_json_file(FAVORITES_FILE, 'favorites')
+    cached = _favorites_cache.get('favorites')
+    if cached is not None:
+        return cached
+    favs = load_json_file(FAVORITES_FILE, 'favorites')
+    _favorites_cache.set('favorites', favs)
+    return favs
 
 def save_favorites(favorites):
-    return save_json_file(FAVORITES_FILE, favorites, 'favorites')
+    result = save_json_file(FAVORITES_FILE, favorites, 'favorites')
+    if result:
+        _favorites_cache.delete('favorites')
+    return result
 
 def load_folder_config():
     """加载文件夹配置（带缓存）"""
@@ -561,6 +614,77 @@ def invalidate_dir_cache(dir_path):
     file_cache.delete(key)
     folder_cache.delete(key)
 
+# ==================== 缩略图缓存 ====================
+
+THUMBNAIL_CACHE_DIR = BASE_DIR / ".thumbnail_cache"
+THUMBNAIL_CACHE_DIR.mkdir(exist_ok=True)
+THUMBNAIL_MAX_AGE = 7 * 24 * 3600  # 缩略图缓存 7 天
+
+def get_thumbnail_path(file_path, size=300):
+    """根据文件路径和大小生成缩略图缓存路径"""
+    stat = file_path.stat()
+    # 用 文件路径+mtime+size 生成唯一缓存名
+    key = f"{file_path}:{stat.st_mtime}:{stat.st_size}:{size}"
+    cache_name = hashlib.md5(key.encode()).hexdigest() + '.jpg'
+    return THUMBNAIL_CACHE_DIR / cache_name
+
+def generate_etag(file_path):
+    """基于文件路径、大小、修改时间生成 ETag"""
+    try:
+        stat = file_path.stat()
+        raw = f"{file_path}:{stat.st_size}:{stat.st_mtime}"
+        return hashlib.md5(raw.encode()).hexdigest()
+    except Exception:
+        return None
+
+def check_not_modified(file_path, max_age=86400):
+    """检查条件请求，返回 304 响应或 None"""
+    etag = generate_etag(file_path)
+
+    # ETag 匹配
+    if_none_match = request.headers.get('If-None-Match')
+    if if_none_match and etag:
+        client_etag = if_none_match.strip('"')
+        if client_etag == etag:
+            resp = Response('', status=304)
+            resp.headers['ETag'] = f'"{etag}"'
+            resp.headers['Cache-Control'] = f'public, max-age={max_age}'
+            return resp
+
+    # If-Modified-Since 匹配
+    if_modified_since = request.headers.get('If-Modified-Since')
+    if if_modified_since:
+        try:
+            from werkzeug.http import parse_date
+            client_time = parse_date(if_modified_since)
+            if client_time:
+                mtime = file_path.stat().st_mtime
+                if int(mtime) <= int(client_time.timestamp()):
+                    resp = Response('', status=304)
+                    resp.headers['Cache-Control'] = f'public, max-age={max_age}'
+                    if etag:
+                        resp.headers['ETag'] = f'"{etag}"'
+                    return resp
+        except Exception:
+            pass
+
+    return None
+
+def set_cache_headers(response, file_path, max_age=86400):
+    """为文件响应添加缓存头"""
+    etag = generate_etag(file_path)
+    if etag:
+        response.headers['ETag'] = f'"{etag}"'
+
+    try:
+        mtime = file_path.stat().st_mtime
+        response.headers['Last-Modified'] = http_date(mtime)
+    except Exception:
+        pass
+
+    response.headers['Cache-Control'] = f'public, max-age={max_age}'
+    return response
+
 # ==================== 核心功能：获取文件/文件夹 ====================
 
 def get_files(directory='', sort_by='name', sort_order='asc'):
@@ -621,7 +745,7 @@ def get_files(directory='', sort_by='name', sort_order='asc'):
 
                 safe_rel = urllib.parse.quote(rel)
 
-                files.append({
+                file_info = {
                     'name': name,
                     'size': stat.st_size,
                     'path': rel,
@@ -629,7 +753,13 @@ def get_files(directory='', sort_by='name', sort_order='asc'):
                     'url': f'/file/{safe_rel}',
                     'preview_url': f'/file/{safe_rel}' if ftype != 'video' else f'/video/{safe_rel}',
                     'type': ftype,
-                })
+                }
+                # 图片添加缩略图 URL
+                if ftype == 'image':
+                    file_info['thumbnail_url'] = f'/api/thumbnail/{safe_rel}?size=300'
+                    file_info['large_thumbnail_url'] = f'/api/thumbnail/{safe_rel}?size=800'
+
+                files.append(file_info)
     except PermissionError:
         logger.warning(f"无权限访问: {full_path}")
     except Exception as e:
@@ -1094,6 +1224,17 @@ def api_get_subtitle_content(filename):
     if subtitle_index is None:
         return jsonify({'error': '缺少字幕索引参数'}), 400
 
+    # 检查字幕缓存
+    try:
+        stat = file_path.stat()
+        cache_key = f"{file_path}:{stat.st_mtime}:{subtitle_index}"
+    except Exception:
+        cache_key = f"{file_path}:{subtitle_index}"
+
+    cached = _subtitle_cache.get(cache_key)
+    if cached is not None:
+        return cached, 200, {'Content-Type': 'text/vtt'}
+
     try:
         cmd = [
             'ffmpeg', '-i', str(file_path),
@@ -1101,6 +1242,8 @@ def api_get_subtitle_content(filename):
             '-f', 'webvtt', '-'
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+        # 缓存字幕结果
+        _subtitle_cache.set(cache_key, result.stdout)
         return result.stdout, 200, {'Content-Type': 'text/vtt'}
     except subprocess.CalledProcessError as e:
         logger.error(f"FFmpeg 提取字幕失败: {e}")
@@ -1108,6 +1251,73 @@ def api_get_subtitle_content(filename):
     except Exception as e:
         logger.error(f"获取字幕内容失败: {e}")
         return jsonify({'error': '获取字幕内容失败'}), 500
+
+# ==================== 路由：缩略图 ====================
+
+@app.route('/api/thumbnail/<path:filename>')
+@require_auth
+def serve_thumbnail(filename):
+    """图片缩略图服务 - 自动生成并缓存缩略图"""
+    from PIL import Image
+    import io
+
+    decoded = urllib.parse.unquote(filename)
+    file_path = Path(MOBILE_HDD_PATH) / decoded
+
+    if not file_path.exists() or not file_path.is_file():
+        return "文件不存在", 404
+
+    ext = file_path.suffix.lower()[1:]
+    if ext not in IMAGE_EXTENSIONS:
+        return "不是图片文件", 400
+
+    size = request.args.get('size', 300, type=int)
+    size = min(max(size, 50), 800)  # 限制 50-800px
+
+    # 检查缩略图缓存
+    thumb_path = get_thumbnail_path(file_path, size)
+
+    if thumb_path.exists():
+        # 条件请求
+        not_modified = check_not_modified(thumb_path, max_age=THUMBNAIL_MAX_AGE)
+        if not_modified:
+            return not_modified
+
+        resp = send_file(str(thumb_path), mimetype='image/jpeg')
+        set_cache_headers(resp, thumb_path, max_age=THUMBNAIL_MAX_AGE)
+        return resp
+
+    # 生成缩略图
+    try:
+        with Image.open(file_path) as img:
+            # 处理 EXIF 旋转
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img)
+
+            # RGBA → RGB（处理 PNG 透明背景）
+            if img.mode in ('RGBA', 'LA', 'P'):
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                background.paste(img, mask=img.split()[-1] if 'A' in img.mode else None)
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+
+            # 等比缩放
+            img.thumbnail((size, size), Image.LANCZOS)
+
+            # 保存到缓存
+            img.save(str(thumb_path), 'JPEG', quality=75, optimize=True)
+
+        resp = send_file(str(thumb_path), mimetype='image/jpeg')
+        set_cache_headers(resp, thumb_path, max_age=THUMBNAIL_MAX_AGE)
+        return resp
+
+    except Exception as e:
+        logger.error(f"生成缩略图失败 {file_path}: {e}")
+        # 回退到原图
+        return redirect(url_for('serve_file', filename=filename, token=request.args.get('token')))
 
 # ==================== 路由：文件服务 ====================
 
@@ -1125,13 +1335,21 @@ def serve_video(filename):
     if ext not in VIDEO_EXTENSIONS:
         return "不是视频文件", 400
 
+    # 条件请求 → 304
+    not_modified = check_not_modified(file_path, max_age=3600)
+    if not_modified:
+        return not_modified
+
     mime = mimetypes.guess_type(str(file_path))[0] or 'video/mp4'
-    return send_file(
+    resp = send_file(
         str(file_path),
         mimetype=mime,
         as_attachment=False,
         conditional=True,  # 自动处理 Range 请求
     )
+    set_cache_headers(resp, file_path, max_age=3600)
+    resp.headers['Accept-Ranges'] = 'bytes'
+    return resp
 
 @app.route('/file/<path:filename>')
 @require_auth
@@ -1143,17 +1361,24 @@ def serve_file(filename):
     if not file_path.exists() or not file_path.is_file():
         return "文件不存在", 404
 
+    # 条件请求 → 304
+    not_modified = check_not_modified(file_path, max_age=86400)
+    if not_modified:
+        return not_modified
+
     mime, _ = mimetypes.guess_type(str(file_path))
 
     # 视频/图片在浏览器预览，其他下载
     as_attachment = not (mime and (mime.startswith('video/') or mime.startswith('image/')))
 
-    return send_file(
+    resp = send_file(
         str(file_path),
         as_attachment=as_attachment,
         download_name=file_path.name,
         conditional=True,
     )
+    set_cache_headers(resp, file_path, max_age=86400)
+    return resp
 
 # ==================== 路由：VLC 重定向 ====================
 

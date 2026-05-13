@@ -25,7 +25,7 @@ function ImageWaterfall() {
   // 翻页模式当前页
   const [currentPage, setCurrentPage] = useState(0);
 
-  // 每张图片的加载状态
+  // 每张图片的加载状态：{ loaded: boolean, progress: number (0-100) }
   const [imageLoading, setImageLoading] = useState({});
 
   // 工具栏显示/隐藏
@@ -92,11 +92,47 @@ function ImageWaterfall() {
     }
   };
 
+  // 带进度监听的图片加载
+  const loadImageWithProgress = (index, url) => {
+    setImageLoading(prev => ({ ...prev, [index]: { loaded: false, progress: 0 } }));
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = 'blob';
+
+    xhr.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        setImageLoading(prev => ({
+          ...prev,
+          [index]: { loaded: false, progress: percent }
+        }));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        // 创建 blob URL 并更新图片 src
+        const blobUrl = URL.createObjectURL(xhr.response);
+        setImageLoading(prev => ({
+          ...prev,
+          [index]: { loaded: true, progress: 100, blobUrl }
+        }));
+      } else {
+        setImageLoading(prev => ({ ...prev, [index]: { loaded: false, progress: -1 } }));
+      }
+    };
+
+    xhr.onerror = () => {
+      setImageLoading(prev => ({ ...prev, [index]: { loaded: false, progress: -1 } }));
+    };
+
+    xhr.send();
+  };
+
   // 返回
   const goBack = () => {
-    const params = getUrlParams();
-    const path = params.path;
-    window.location.href = path ? `/files?dir=${encodeURIComponent(path)}` : '/files';
+    window.history.back()
   };
 
   // 切换阅读模式
@@ -259,6 +295,24 @@ function ImageWaterfall() {
     return () => { document.body.style.overflow = ''; };
   }, []);
 
+  // 预加载：翻页模式下提前加载前后各 2 张
+  useEffect(() => {
+    if (readMode !== 'page' || images.length === 0) return;
+
+    const preloadRange = 2;
+    const indices = [];
+    for (let i = currentPage - preloadRange; i <= currentPage + preloadRange; i++) {
+      if (i >= 0 && i < images.length && i !== currentPage) {
+        indices.push(i);
+      }
+    }
+
+    indices.forEach(i => {
+      const img = new Image();
+      img.src = images[i].preview_url;
+    });
+  }, [currentPage, readMode, images]);
+
   // ========== 渲染 ==========
 
   // 加载中
@@ -354,23 +408,45 @@ function ImageWaterfall() {
           <div className="reader-scroll-images">
             {images.map((image, index) => (
               <div key={image.path} className="reader-image-slot" data-index={index}>
-                {/* 加载中指示器 */}
-                {imageLoading[index] !== false && (
+                {/* 加载中指示器 - 带进度 */}
+                {imageLoading[index]?.loaded !== true && (
                   <div className="reader-image-loading">
-                    <div className="reader-spinner"></div>
-                    <span>加载中...</span>
+                    <div className="image-progress-ring">
+                      <svg viewBox="0 0 36 36">
+                        <path
+                          className="image-progress-bg"
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <path
+                          className="image-progress-fill"
+                          strokeDasharray={`${imageLoading[index]?.progress ?? 0}, 100`}
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                      </svg>
+                      <span className="image-progress-text">
+                        {(imageLoading[index]?.progress ?? 0) >= 0 ? `${imageLoading[index]?.progress ?? 0}%` : '...'}
+                      </span>
+                    </div>
                   </div>
                 )}
                 <img
-                  src={image.preview_url}
+                  src={imageLoading[index]?.blobUrl || image.preview_url}
                   alt={image.name}
-                  className={`reader-image ${imageLoading[index] === false ? 'loaded' : ''}`}
+                  className={`reader-image ${imageLoading[index]?.loaded ? 'loaded' : ''}`}
                   loading={index < 3 ? 'eager' : 'lazy'}
-                  onLoad={() => setImageLoading(prev => ({ ...prev, [index]: false }))}
-                  onLoadStart={() => setImageLoading(prev => ({ ...prev, [index]: true }))}
+                  onLoad={() => {
+                    if (!imageLoading[index]?.blobUrl) {
+                      setImageLoading(prev => ({ ...prev, [index]: { loaded: true, progress: 100 } }));
+                    }
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleImageTap(image, e);
+                  }}
+                  onLoadStart={() => {
+                    if (!imageLoading[index]) {
+                      loadImageWithProgress(index, image.preview_url);
+                    }
                   }}
                 />
               </div>
@@ -385,22 +461,44 @@ function ImageWaterfall() {
           <div className="reader-page-view">
             {images[currentPage] && (
               <div className="reader-page-image-wrapper">
-                {/* 加载中指示器 */}
-                {imageLoading[currentPage] !== false && (
+                {/* 加载中指示器 - 带进度 */}
+                {imageLoading[currentPage]?.loaded !== true && (
                   <div className="reader-image-loading">
-                    <div className="reader-spinner"></div>
-                    <span>加载中...</span>
+                    <div className="image-progress-ring">
+                      <svg viewBox="0 0 36 36">
+                        <path
+                          className="image-progress-bg"
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                        <path
+                          className="image-progress-fill"
+                          strokeDasharray={`${imageLoading[currentPage]?.progress ?? 0}, 100`}
+                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        />
+                      </svg>
+                      <span className="image-progress-text">
+                        {(imageLoading[currentPage]?.progress ?? 0) >= 0 ? `${imageLoading[currentPage]?.progress ?? 0}%` : '...'}
+                      </span>
+                    </div>
                   </div>
                 )}
                 <img
-                  src={images[currentPage].preview_url}
+                  src={imageLoading[currentPage]?.blobUrl || images[currentPage].preview_url}
                   alt={images[currentPage].name}
-                  className={`reader-page-image ${imageLoading[currentPage] === false ? 'loaded' : ''}`}
-                  onLoad={() => setImageLoading(prev => ({ ...prev, [currentPage]: false }))}
-                  onLoadStart={() => setImageLoading(prev => ({ ...prev, [currentPage]: true }))}
+                  className={`reader-page-image ${imageLoading[currentPage]?.loaded ? 'loaded' : ''}`}
+                  onLoad={() => {
+                    if (!imageLoading[currentPage]?.blobUrl) {
+                      setImageLoading(prev => ({ ...prev, [currentPage]: { loaded: true, progress: 100 } }));
+                    }
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleImageTap(images[currentPage], e);
+                  }}
+                  onLoadStart={() => {
+                    if (!imageLoading[currentPage]) {
+                      loadImageWithProgress(currentPage, images[currentPage].preview_url);
+                    }
                   }}
                 />
               </div>
@@ -481,6 +579,7 @@ function ImageWaterfall() {
             src={zoomedImage.preview_url}
             alt={zoomedImage.name}
             className="reader-zoom-image"
+            loading="eager"
             onClick={(e) => e.stopPropagation()}
           />
           <button className="reader-zoom-close" onClick={() => setZoomedImage(null)}>
