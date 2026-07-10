@@ -35,6 +35,36 @@ const FileList = () => {
   // 添加一个标志来避免无限循环
   const [isUpdatingUrl, setIsUpdatingUrl] = useState(false);
 
+  // 卡片触摸激活状态
+  const [activeCard, setActiveCard] = useState(null);
+
+  // 处理指针按下
+  const handlePointerDown = (key) => (e) => {
+    e.preventDefault();
+    setActiveCard(key);
+    document.body.classList.add('touch-active');
+  };
+
+  // 处理指针释放
+  const handlePointerUp = () => {
+    setActiveCard(null);
+    document.body.classList.remove('touch-active');
+  };
+
+  // 备用清除机制
+  useEffect(() => {
+    const handleBlur = () => {
+      setActiveCard(null);
+      document.body.classList.remove('touch-active');
+    };
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('pointercancel', handlePointerUp);
+    return () => {
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, []);
+
   // 监听URL变化
   useEffect(() => {
     const handleUrlChange = () => {
@@ -334,6 +364,11 @@ const FileList = () => {
     return hasPathPermission || hasRootPermission || hasParentPermission;
   }
 
+  // 检查当前文件夹是否有图片
+  const hasImages = () => {
+    return files.some(file => file.type === 'image');
+  }
+
   // 处理文件选择
   const handleFileSelect = (e) => {
     const selectedFiles = Array.from(e.target.files);
@@ -564,10 +599,12 @@ const FileList = () => {
           </button>
         )}
         
-        {/* 瀑布预览按钮 */}
-        <button className="btn btn-secondary" onClick={handleWaterfallPreview}>
-          <i className="fa-solid fa-images"></i> 瀑布预览
-        </button>
+        {/* 瀑布预览按钮 - 只在有图片时显示 */}
+        {hasImages() && (
+          <button className="btn btn-secondary" onClick={handleWaterfallPreview}>
+            <i className="fa-solid fa-images"></i> 瀑布预览
+          </button>
+        )}
         
         {/* 文件上传按钮 */}
         {hasUploadPermission() && (
@@ -638,7 +675,14 @@ const FileList = () => {
             if (aKey.length > bKey.length) return sortOrder === 'asc' ? 1 : -1;
             return 0;
           }).map(folder => (
-            <div key={folder.name} className="folder-card" onClick={() => handleFolderClick(folder.name)}>
+            <div
+              key={folder.name}
+              className={`folder-card ${activeCard === folder.name ? 'card-active' : ''}`}
+              onClick={() => { handleFolderClick(folder.name); setActiveCard(null); document.body.classList.remove('touch-active'); }}
+              onPointerDown={handlePointerDown(folder.name)}
+              onPointerUp={handlePointerUp}
+              onPointerLeave={handlePointerUp}
+            >
               <div className="folder-icon">
                 <i className={`fa-solid ${folder.icon}`} style={{ color: folder.color }}></i>
               </div>
@@ -652,7 +696,13 @@ const FileList = () => {
       {sortedFiles.length > 0 ? (
         <div className="file-grid">
           {sortedFiles.map(file => (
-            <div key={file.path} className={`file-card type-${file.type}`}>
+            <div
+              key={file.path}
+              className={`file-card type-${file.type} ${activeCard === file.path ? 'card-active' : ''}`}
+              onPointerDown={handlePointerDown(file.path)}
+              onPointerUp={handlePointerUp}
+              onPointerLeave={handlePointerUp}
+            >
               <div className="file-icon">
                 {getFileIcon(file.type)}
               </div>

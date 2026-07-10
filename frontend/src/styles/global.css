@@ -533,6 +533,8 @@ label.btn {
   transition: all var(--transition-smooth);
   background-color: rgba(205, 160, 168, 0.04);
   -webkit-appearance: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .login-form input:focus {
@@ -619,6 +621,8 @@ label.btn {
   font-size: var(--font-size-lg);
   min-height: 40px;
   -webkit-appearance: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
@@ -915,6 +919,7 @@ label.btn {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   overflow: hidden;
+  transform: translateY(0) scale(1);
 }
 
 .folder-card::before {
@@ -956,7 +961,17 @@ label.btn {
   opacity: 1;
 }
 
-.folder-card:active {
+.folder-card.card-active {
+  transform: translateY(-2px) scale(0.98) !important;
+}
+
+/* 触摸时禁用 hover 效果 */
+body.touch-active .folder-card:hover {
+  transform: none;
+  box-shadow: var(--shadow-card);
+}
+
+.folder-card.card-active {
   transform: translateY(-2px) scale(0.98);
 }
 
@@ -1011,6 +1026,7 @@ label.btn {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   overflow: hidden;
+  transform: translateY(0) scale(1);
 }
 
 .file-card::before {
@@ -1063,8 +1079,14 @@ label.btn {
   opacity: 1;
 }
 
-.file-card:active {
-  transform: translateY(-2px) scale(0.98);
+.file-card.card-active {
+  transform: translateY(-2px) scale(0.98) !important;
+}
+
+/* 触摸时禁用 hover 效果 */
+body.touch-active .file-card:hover {
+  transform: none;
+  box-shadow: var(--shadow-card);
 }
 
 .file-card .file-actions {

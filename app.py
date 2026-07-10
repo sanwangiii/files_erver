@@ -521,6 +521,10 @@ def check_permission(username, path):
     if '*' in permissions:
         return True
 
+    # 空路径允许访问（会显示用户有权限的文件夹）
+    if not path:
+        return True
+
     # 检查路径是否在允许的权限目录下
     for perm in permissions:
         if path.startswith(perm) or path.startswith('/' + perm):
@@ -532,6 +536,24 @@ def check_permission(username, path):
             return True
 
     return False
+
+
+def get_user_allowed_folders(username):
+    """获取用户有权限访问的顶层文件夹列表"""
+    users = load_users()
+    user = next((u for u in users if u['username'] == username), None)
+    if not user:
+        return []
+
+    # 管理员有全部权限
+    if user.get('isAdmin'):
+        return ['*']  # 返回通配符表示全部
+
+    permissions = user.get('permissions', [])
+    if '*' in permissions:
+        return ['*']
+
+    return permissions
 
 # ==================== 工具函数 ====================
 
@@ -1015,13 +1037,22 @@ def api_files():
 
         decoded_dir = urllib.parse.unquote(current_dir)
 
-        # 权限检查
+        # 获取当前用户
         username = getattr(request, '_current_user', None) or get_current_user()
+        users = load_users()
+        user = next((u for u in users if u['username'] == username), None) if username else None
+
+        # 权限检查
         if username and not check_permission(username, decoded_dir):
             return jsonify({'error': '无权访问该目录'}), 403
 
         files = get_files(decoded_dir, sort_by, sort_order)
         folders = get_folders(decoded_dir, sort_by, sort_order)
+
+        # 如果是根目录且用户不是管理员，按权限过滤文件夹和文件
+        if not decoded_dir and user and not user.get('isAdmin') and '*' not in user.get('permissions', []):
+            allowed = user.get('permissions', [])
+            folders = [f for f in folders if f.get('name') in allowed or f.get('path') in allowed]
 
         parent_dir = None
         if decoded_dir:

@@ -13,15 +13,14 @@
     {
       "id": 2,
       "username": "liu",
-      "password": "$2b$10$HXeheJE2qxBdWyKVjYVqKuObPuG8AN6aRBl6n.bFzpVJVZFwWVCSO",
+      "password": "$2b$10$BivZ56ncjRHRj3PBN2cAKOfvt1dEAptcop/l5QixDloOLwlWhVInS",
       "isAdmin": false,
       "permissions": [
         "动漫",
         "张头铁",
-        "电视剧",
-        "宝宝"
-      ],
-      "token": "liu-token-1766408540"
+        "宝宝",
+        "电视剧"
+      ]
     }
   ]
 }
